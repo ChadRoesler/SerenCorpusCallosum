@@ -1,0 +1,81 @@
+[build-system]
+requires = ["setuptools>=68", "setuptools-scm>=8", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "seren-corpus-callosum"
+dynamic = ["version"]
+description = "Read-only N-store memory federation for Seren. The callosum - fans Loci, SerenMemory, and any number more into one RRF-merged recall surface."
+readme = "README.md"
+# NO upper Python bound, and that absence is the tell of what SCC is: it NEVER
+# embeds. The merge is Reciprocal Rank Fusion, which reads only each store's
+# RANK ordering - so there is no sentence-transformers, no torch, anywhere in
+# the tree. Loci/Memory cap <3.13 for their torch-bearing [vector] extra; the
+# callosum has no such extra and no such wall. Dep-lightest service in the
+# family, by construction.
+requires-python = ">=3.10"
+license = { text = "GPL-3.0-or-later" }
+authors = [{ name = "Chad Roesler" }]
+keywords = ["llm", "memory", "federation", "rrf", "reciprocal-rank-fusion", "seren", "callosum"]
+
+# Core deps are the web stack + httpx. httpx is NOT test-only here the way it
+# can be elsewhere - it's the live transport the fan calls every store through,
+# so it's load-bearing runtime.
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
+    "pydantic>=2.9.0",
+    "pyyaml>=6.0.2",
+    "httpx>=0.27.0",
+]
+
+[project.optional-dependencies]
+# There is deliberately NO [vector] extra. The callosum is embedder-agnostic by
+# design (RRF over ranks, never magnitudes) and embeds nothing of its own, so
+# it never needs sqlite-vec or sentence-transformers. The absence is the point.
+mcp = [
+    # The Python MCP SDK (FastMCP merged in). Exposes the `search` tool so a
+    # connected model can fan all stores in one call. Same loose pin as the
+    # family - the SDK moves fast and the mount tolerates transport drift.
+    "mcp>=1.0",
+]
+corp = [
+    # Corp / intercepting-proxy support. Routes Python TLS through the OS trust
+    # store so a corp root CA is honored on the callosum's OUTBOUND calls to an
+    # https store. Opt-in: pip install 'seren-corpus-callosum[corp]' +
+    # tls.trust_system_store: true (the --corp installer flag sets both).
+    "truststore>=0.9",
+]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    # Silences the starlette->httpx deprecation warning under
+    # fastapi.testclient (the one the app tests emit) and future-proofs against
+    # the hard cutover. Same as the rest of the family.
+    "httpx2>=2.3",
+]
+
+[project.scripts]
+seren-corpus-callosum = "seren_corpus_callosum.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["seren_corpus_callosum*"]
+
+# Ship a viewer HTML inside the wheel if/when one lands (a merged-recall
+# inspector is the natural one). Harmless before it exists - the glob just
+# matches nothing. Same pip-strips-non-.py gotcha as the family.
+[tool.setuptools.package-data]
+seren_corpus_callosum = ["viewer/*.html"]
+
+[tool.setuptools_scm]
+# .git is one level above this pyproject (outer repo root, not the inner
+# SerenCorpusCallosum package dir).
+root = ".."
+version_scheme = "release-branch-semver"
+# Tag-derived version written into the package, shipped in the wheel, read via
+# importlib.metadata. _version.py is a build artifact - gitignore it.
+version_file = "seren_corpus_callosum/_version.py"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"

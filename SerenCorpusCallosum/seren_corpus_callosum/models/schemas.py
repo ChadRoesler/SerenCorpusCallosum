@@ -1,0 +1,50 @@
+"""
+seren_corpus_callosum.models.schemas
+════════════════════════════════════════════════════════════════════════
+
+The HTTP contract for the callosum's /search. Request mirrors the family's
+shape ({query, n_results}); the response is one merged, ranked list where
+every hit carries full provenance — which store it came from, its rank there,
+and both the cross-store RRF score and the within-store relevance — so the
+merge is explainable, not a black box. `stores_searched` + `skipped` tell you
+which hemispheres actually answered this turn.
+"""
+from __future__ import annotations
+
+from typing import Any, Optional
+
+from pydantic import BaseModel, Field
+
+
+class SearchRequest(BaseModel):
+    query: str
+    # None -> use the federation's configured default n_results.
+    n_results: Optional[int] = None
+
+
+class FusedHitOut(BaseModel):
+    """One merged hit with its provenance laid bare."""
+
+    store: str                              # which configured store served it
+    id: str                                 # the store-native id
+    content: str                            # the surfaced text
+    score: float                            # cross-store RRF score (the merge ranking key)
+    store_rank: int                         # 1-based rank within its origin store
+    base_relevance: float                   # within-store relevance (the floor signal)
+    native_score: Optional[float] = None    # the store's own score (tier-weighted, etc.) — display
+    raw_distance: Optional[float] = None     # raw cosine distance if the store exposed it — display
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class SkippedStore(BaseModel):
+    """A store that couldn't be bound at build time (e.g. unknown type)."""
+
+    name: str
+    reason: str
+
+
+class SearchResponse(BaseModel):
+    query: str
+    hits: list[FusedHitOut]
+    stores_searched: list[str]              # the stores that were actually fanned this call
+    skipped: list[SkippedStore] = Field(default_factory=list)

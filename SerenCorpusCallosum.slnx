@@ -1,0 +1,51 @@
+<Solution>
+  <Folder Name="/.github/">
+    <File Path=".github/dependabot.yml" />
+  </Folder>
+  <Folder Name="/.github/ISSUE_TEMPLATE/">
+    <File Path=".github/ISSUE_TEMPLATE/bug_report.yml" />
+    <File Path=".github/ISSUE_TEMPLATE/config.yml" />
+  </Folder>
+  <Folder Name="/.github/workflows/">
+    <File Path=".github/workflows/release.yml" />
+  </Folder>
+  <Folder Name="/SerenCorpusCallosumVSCode/">
+    <File Path="SerenCopusCallosumVSCode/.vscodeignore" />
+    <File Path="SerenCopusCallosumVSCode/LICENSE" />
+    <File Path="SerenCopusCallosumVSCode/package-lock.json" />
+    <File Path="SerenCopusCallosumVSCode/package.json" />
+    <File Path="SerenCopusCallosumVSCode/publish.ps1" />
+    <File Path="SerenCopusCallosumVSCode/README.md" />
+    <File Path="SerenCopusCallosumVSCode/tsconfig.json" />
+    <File Path="SerenCopusCallosumVSCode/vitest.config.ts" />
+  </Folder>
+  <Folder Name="/SerenCorpusCallosumVSCode/resources/">
+    <File Path="SerenCopusCallosumVSCode/resources/SerenIcon.png" />
+  </Folder>
+  <Folder Name="/SerenCorpusCallosumVSCode/seren_corpuscallosum-vscode/">
+    <File Path="SerenCopusCallosumVSCode/seren_corpuscallosum-vscode/.vscodeignore" />
+    <File Path="SerenCopusCallosumVSCode/seren_corpuscallosum-vscode/esbuild.js" />
+  </Folder>
+  <Folder Name="/SerenCorpusCallosumVSCode/seren_corpuscallosum-vscode/src/">
+    <File Path="SerenCopusCallosumVSCode/seren_corpuscallosum-vscode/src/client.ts" />
+    <File Path="SerenCopusCallosumVSCode/seren_corpuscallosum-vscode/src/config.ts" />
+    <File Path="SerenCopusCallosumVSCode/seren_corpuscallosum-vscode/src/extension.ts" />
+    <File Path="SerenCopusCallosumVSCode/seren_corpuscallosum-vscode/src/tools.ts" />
+  </Folder>
+  <Folder Name="/SerenCorpusCallosumVSCode/test/">
+    <File Path="SerenCopusCallosumVSCode/test/client.test.ts" />
+  </Folder>
+  <Folder Name="/SerenCorpusCallosumVSCode/test/mocks/">
+    <File Path="SerenCopusCallosumVSCode/test/mocks/vscode.ts" />
+  </Folder>
+  <Folder Name="/Solution Items/">
+    <File Path=".gitignore" />
+    <File Path="LICENSE" />
+    <File Path="Makefile" />
+    <File Path="README.md" />
+    <File Path="SECURITY.md" />
+  </Folder>
+  <Project Path="SerenCorpusCallosum/SerenCorpusCallosum.pyproj" Type="888888a0-9f3d-457c-b088-3a5042f75d52" Id="993043ce-fb19-434e-bc23-fcfe959090d4">
+    <Build Project="false" />
+  </Project>
+</Solution>

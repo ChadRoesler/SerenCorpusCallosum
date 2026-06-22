@@ -10,33 +10,33 @@
     <File Path=".github/workflows/release.yml" />
   </Folder>
   <Folder Name="/SerenCorpusCallosumVSCode/">
-    <File Path="SerenCopusCallosumVSCode/.vscodeignore" />
-    <File Path="SerenCopusCallosumVSCode/LICENSE" />
-    <File Path="SerenCopusCallosumVSCode/package-lock.json" />
-    <File Path="SerenCopusCallosumVSCode/package.json" />
-    <File Path="SerenCopusCallosumVSCode/publish.ps1" />
-    <File Path="SerenCopusCallosumVSCode/README.md" />
-    <File Path="SerenCopusCallosumVSCode/tsconfig.json" />
-    <File Path="SerenCopusCallosumVSCode/vitest.config.ts" />
+    <File Path="SerenCorpusCallosumVSCode/.vscodeignore" />
+    <File Path="SerenCorpusCallosumVSCode/LICENSE" />
+    <File Path="SerenCorpusCallosumVSCode/package-lock.json" />
+    <File Path="SerenCorpusCallosumVSCode/package.json" />
+    <File Path="SerenCorpusCallosumVSCode/publish.ps1" />
+    <File Path="SerenCorpusCallosumVSCode/README.md" />
+    <File Path="SerenCorpusCallosumVSCode/tsconfig.json" />
+    <File Path="SerenCorpusCallosumVSCode/vitest.config.ts" />
   </Folder>
   <Folder Name="/SerenCorpusCallosumVSCode/resources/">
-    <File Path="SerenCopusCallosumVSCode/resources/SerenIcon.png" />
+    <File Path="SerenCorpusCallosumVSCode/resources/SerenIcon.png" />
   </Folder>
   <Folder Name="/SerenCorpusCallosumVSCode/seren_corpuscallosum-vscode/">
-    <File Path="SerenCopusCallosumVSCode/seren_corpuscallosum-vscode/.vscodeignore" />
-    <File Path="SerenCopusCallosumVSCode/seren_corpuscallosum-vscode/esbuild.js" />
+    <File Path="SerenCorpusCallosumVSCode/seren_corpuscallosum-vscode/.vscodeignore" />
+    <File Path="SerenCorpusCallosumVSCode/seren_corpuscallosum-vscode/esbuild.js" />
   </Folder>
   <Folder Name="/SerenCorpusCallosumVSCode/seren_corpuscallosum-vscode/src/">
-    <File Path="SerenCopusCallosumVSCode/seren_corpuscallosum-vscode/src/client.ts" />
-    <File Path="SerenCopusCallosumVSCode/seren_corpuscallosum-vscode/src/config.ts" />
-    <File Path="SerenCopusCallosumVSCode/seren_corpuscallosum-vscode/src/extension.ts" />
-    <File Path="SerenCopusCallosumVSCode/seren_corpuscallosum-vscode/src/tools.ts" />
+    <File Path="SerenCorpusCallosumVSCode/seren_corpuscallosum-vscode/src/client.ts" />
+    <File Path="SerenCorpusCallosumVSCode/seren_corpuscallosum-vscode/src/config.ts" />
+    <File Path="SerenCorpusCallosumVSCode/seren_corpuscallosum-vscode/src/extension.ts" />
+    <File Path="SerenCorpusCallosumVSCode/seren_corpuscallosum-vscode/src/tools.ts" />
   </Folder>
   <Folder Name="/SerenCorpusCallosumVSCode/test/">
-    <File Path="SerenCopusCallosumVSCode/test/client.test.ts" />
+    <File Path="SerenCorpusCallosumVSCode/test/client.test.ts" />
   </Folder>
   <Folder Name="/SerenCorpusCallosumVSCode/test/mocks/">
-    <File Path="SerenCopusCallosumVSCode/test/mocks/vscode.ts" />
+    <File Path="SerenCorpusCallosumVSCode/test/mocks/vscode.ts" />
   </Folder>
   <Folder Name="/Solution Items/">
     <File Path=".gitignore" />

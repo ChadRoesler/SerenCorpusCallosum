@@ -18,7 +18,10 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ["3.10", "3.11", "3.12"]
-        extras: ["dev", "dev,vector", "dev,mcp", "dev,corp", "dev,corp,mcp", "dev,mcp,vector", "dev,corp,vector", "dev,corp,mcp,vector"]
+        # SCC has NO [vector] extra by design (it embeds nothing - RRF over
+        # ranks, never magnitudes). So the real surface is these four, not
+        # eight: base, +mcp, +corp, +both.
+        extras: ["dev", "dev,mcp", "dev,corp", "dev,corp,mcp"]
 
     steps:
       - name: Checkout
@@ -104,7 +107,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: pypi
-      url: https://pypi.org/p/seren-corpuscallosum
+      url: https://pypi.org/p/seren-corpus-callosum
     permissions:
       id-token: write   # MANDATORY for Trusted Publishing; job-level = least privilege
     steps:
@@ -132,21 +135,21 @@ jobs:
           node-version: "20"
 
       - name: Stamp version from the git tag
-        working-directory: SerenCorpusCallosumVSCode
+        working-directory: SerenCopusCallosumVSCode
         run: npm pkg set version="${GITHUB_REF#refs/tags/v}"
 
       - name: Install dependencies
-        working-directory: SerenCorpusCallosumVSCode
+        working-directory: SerenCopusCallosumVSCode
         run: npm install
 
       - name: Build and package
-        working-directory: SerenCorpusCallosumVSCode
+        working-directory: SerenCopusCallosumVSCode
         run: |
           npm run build -- --production
           npm run package
 
       - name: Publish to the VS Code Marketplace
-        working-directory: SerenCorpusCallosumVSCode
+        working-directory: SerenCopusCallosumVSCode
         run: npx @vscode/vsce publish --packagePath $(ls *.vsix)
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
@@ -154,4 +157,4 @@ jobs:
       - name: Upload .vsix to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: SerenCorpusCallosumVSCode/*.vsix
+          files: SerenCopusCallosumVSCode/*.vsix

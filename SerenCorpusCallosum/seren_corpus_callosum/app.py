@@ -12,7 +12,7 @@ ENDPOINTS:
     GET  /health   - liveness
     POST /search   - fan across all stores, RRF-merged, ranked
 
-Deliberately parallel to SerenCorpusCallosum/SerenMemory: same create_app factory, same
+Deliberately parallel to SerenLoci/SerenMemory: same create_app factory, same
 lifespan-into-app.state shape, same conditional-MCP-mount with HTTP-only
 fallback, same trusted-LAN bearer posture, same public-paths set. The tell of
 what THIS service is: there's no store of its own. It owns nothing and

@@ -12,7 +12,7 @@ THE EXTENSIBILITY MODEL (why the gift is a config line):
     speaks the SerenMemory `/search` contract - so it serves EVERY
     SerenMemory-speaking instance you ever fan in. Adding a tenth dedicated
     memory is a config entry against this same adapter, zero new code.
-    `SerenCorpusCallosumAdapter` speaks CorpusCallosum's facts-search shape. A genuinely new
+    `SerenLociAdapter` speaks Loci's facts-search shape. A genuinely new
     kind of store gets a new adapter here and a registry entry below; that's
     the only time "hook in a store" costs code.
 
@@ -121,21 +121,21 @@ class SerenMemoryAdapter(_BaseAdapter):
         return hits
 
 
-class SerenCorpusCallosumAdapter(_BaseAdapter):
-    """Speaks CorpusCallosum's facts-search shape (verified against a live search_loci call):
+class SerenLociAdapter(_BaseAdapter):
+    """Speaks Loci's facts-search shape (verified against a live search_loci call):
 
         -> {query, project, finder, hits: [{id, project, key, value, why,
             score, match_kind, source, raw_distance}]}
 
     A fact's surfaced content is its `value`; key/why/match_kind ride in
-    metadata. CorpusCallosum's `score` IS the within-store base relevance already
+    metadata. Loci's `score` IS the within-store base relevance already
     (1/(1+distance), and 1.0 for an exact-key hit), so we use it directly
     rather than recomputing - that way exact matches correctly read as 1.0.
 
     HTTP CONTRACT - CONFIRMED against seren_loci/routes/search.py +
     models/schemas.py: POST /search with SearchRequest
     {query, project?, n_results, include_fundamentals, include_superseded}
-    -> SearchResponse {query, project, hits: [SearchHit], finder}. CorpusCallosum's
+    -> SearchResponse {query, project, hits: [SearchHit], finder}. Loci's
     `score` is, in its own schema's words, "the SCC common currency":
     normalized 0..1, exact-key hit = 1.0 - so using it directly as
     base_relevance is the intended design, not a convenient guess. Path is
@@ -184,7 +184,7 @@ class SerenCorpusCallosumAdapter(_BaseAdapter):
 # adding one class above and one line here. That's the whole extension point.
 _REGISTRY: dict[str, type[_BaseAdapter]] = {
     SerenMemoryAdapter.type: SerenMemoryAdapter,
-    SerenCorpusCallosumAdapter.type: SerenCorpusCallosumAdapter,
+    SerenLociAdapter.type: SerenLociAdapter,
 }
 
 

@@ -9,11 +9,11 @@ no point HTTP-round-tripping ourselves).
 STRUCTURE
 
 `SccToolImpl` holds the tool as a method; `register_tools` wires it onto a
-FastMCP instance via `@mcp.tool()`. The split exists for testability —
+FastMCP instance via `@mcp.tool()`. The split exists for testability -
 `await SccToolImpl(fed).search(...)` is directly callable in unit tests without
 FastMCP, an MCP client, or an HTTP roundtrip. See `tests/test_mcp_tools.py`.
 
-NAMING: the tool is `search` — bare, the umbrella verb. Next to SerenLoci's
+NAMING: the tool is `search` - bare, the umbrella verb. Next to SerenLoci's
 `search_loci` and SerenMemory's `recall`/`search_memory`, a model reads the
 trio cleanly: `search` = the whole brain, the hemisphere-specific tools = one
 side. The callosum's tool matching its `/search` route (and the family's route
@@ -35,13 +35,13 @@ if TYPE_CHECKING:
 class SccToolImpl:
     """The tool implementation, callable both via FastMCP decoration (in
     production) and directly (in unit tests). The return shape is
-    JSON-serialisable — the FastMCP layer serialises it on the way out."""
+    JSON-serialisable - the FastMCP layer serialises it on the way out."""
 
     def __init__(self, federation: "Federation") -> None:
         self.federation = federation
 
     async def search(self, query: str, n_results: int = 10) -> dict:
-        """Search ALL of Seren's memory in one call — the default recall.
+        """Search ALL of Seren's memory in one call - the default recall.
 
         Fans every configured store (the left brain's facts, the right brain's
         episodic memory, and any other store wired into this callosum), then
@@ -51,9 +51,9 @@ class SccToolImpl:
 
         Prefer this over the hemisphere-specific tools (`search_loci`,
         `recall`) unless you specifically want just one side. Every hit carries
-        provenance — which `store` it came from, its `store_rank` there, the
+        provenance - which `store` it came from, its `store_rank` there, the
         cross-store `score` it was ranked by, and the within-store
-        `base_relevance` — so the merge is explainable. `stores_searched` and
+        `base_relevance` - so the merge is explainable. `stores_searched` and
         `skipped` tell you which stores actually answered; a slow or down store
         degrades the result, it never takes the call down.
         """

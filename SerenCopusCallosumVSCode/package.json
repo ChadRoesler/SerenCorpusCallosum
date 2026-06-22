@@ -1,7 +1,7 @@
 {
   "name": "seren-corpuscallosum",
   "displayName": "Seren CorpusCallosum",
-  "description": "Gives GitHub Copilot and the user access to the SerenCorpusCallosum left brain - set, get, search, and manage keyed coding/logic facts.",
+  "description": "Gives GitHub Copilot one federated search across the whole Seren memory brain - SerenCorpusCallosum fans your query across every configured store (keyed facts, episodic memory, and more) and returns one rank-fused list.",
   "version": "0.2.0",
   "publisher": "ChadRoesler",
   "repository": {
@@ -36,9 +36,9 @@
         },
         "serenCorpusCallosum.startCommand": {
           "type": "string",
-          "default": "python -m seren_corpuscallosum",
+          "default": "seren-corpus-callosum",
           "scope": "application",
-          "description": "Shell command used to start the SerenCorpusCallosum service when it is not reachable. Application-scoped so workspace settings cannot override it (security: prevents a malicious .vscode/settings.json from injecting a different command)."
+          "description": "Shell command used to start the SerenCorpusCallosum service when it is not reachable (the installed console script; or use 'python -m seren_corpus_callosum'). Application-scoped so workspace settings cannot override it (security: prevents a malicious .vscode/settings.json from injecting a different command)."
         },
         "serenCorpusCallosum.suppressStartPrompt": {
           "type": "boolean",
@@ -64,208 +64,42 @@
       {
         "command": "serenCorpusCallosum.checkHealth",
         "title": "Seren CorpusCallosum: Check Service Health"
+      },
+      {
+        "command": "serenCorpusCallosum.openViewer",
+        "title": "Seren CorpusCallosum: Open the Bridge (viewer)"
       }
     ],
     "languageModelTools": [
-      {
-        "name": "seren_corpuscallosum_set_fact",
-        "tags": [
-          "seren",
-          "corpuscallosum",
-          "facts"
-        ],
-        "toolReferenceName": "serenSetFact",
-        "displayName": "Set Fact",
-        "userDescription": "Set or replace a keyed fact in SerenCorpusCallosum.",
-        "canBeReferencedInPrompt": true,
-        "modelDescription": "Set (or replace) a fact in SerenCorpusCallosum - the left brain of keyed, deterministic coding/logic knowledge. `project` defaults to '*' (fundamentals: cross-project truths like 'camelCase is life'); pass a concrete project name for a per-project convention. If a live value already exists for this (project, key) it is SUPERSEDED - kept as history, never blended into the new value. ALWAYS include `why` when there is one: it is the hard-won reason the fact is shaped this way, and it is searchable. Use this when the user states a durable preference, rule, or hard-won fact ('we use 4-space indent', 'this env var must be set at compile time').",
-        "inputSchema": {
-          "type": "object",
-          "properties": {
-            "key": {
-              "type": "string",
-              "description": "The addressable locus - a dotted identifier like 'posh.brace_style' or 'cuda.no_vmm'."
-            },
-            "value": {
-              "type": "string",
-              "description": "The fact / value itself."
-            },
-            "why": {
-              "type": "string",
-              "description": "The hard-won reason this fact is shaped this way. Searchable; include it whenever there is one."
-            },
-            "project": {
-              "type": "string",
-              "default": "*",
-              "description": "Scope. '*' (default) = fundamentals (cross-project truths). A concrete project name = a per-project convention."
-            }
-          },
-          "required": [
-            "key",
-            "value"
-          ]
-        }
-      },
-      {
-        "name": "seren_corpuscallosum_get_fact",
-        "tags": [
-          "seren",
-          "corpuscallosum",
-          "facts"
-        ],
-        "toolReferenceName": "serenGetFact",
-        "displayName": "Get Fact",
-        "userDescription": "Get THE live value for a key.",
-        "canBeReferencedInPrompt": true,
-        "modelDescription": "Get THE live value for a (project, key), deterministically - exact address in, the thing out, no ranking, no guessing. This is the spine of the left brain. `project` defaults to '*' (fundamentals). Returns {found: false} if there is no live value (a never-set or retired key) - a clean answer, not an error. Use this when you know the exact key you want.",
-        "inputSchema": {
-          "type": "object",
-          "properties": {
-            "key": {
-              "type": "string",
-              "description": "The exact key to look up (e.g. 'posh.brace_style')."
-            },
-            "project": {
-              "type": "string",
-              "default": "*",
-              "description": "Scope. '*' (default) = fundamentals. A concrete project name for a per-project value."
-            }
-          },
-          "required": [
-            "key"
-          ]
-        }
-      },
       {
         "name": "seren_corpuscallosum_search",
         "tags": [
           "seren",
           "corpuscallosum",
-          "facts",
-          "search"
+          "search",
+          "memory"
         ],
         "toolReferenceName": "serenSearch",
-        "displayName": "Search CorpusCallosum",
-        "userDescription": "Search SerenCorpusCallosum for relevant facts when you don't know the exact key.",
+        "displayName": "Search the Seren brain",
+        "userDescription": "Search across every Seren memory store at once (keyed facts + episodic memory + more), rank-fused into one list.",
         "canBeReferencedInPrompt": true,
-        "modelDescription": "Search SerenCorpusCallosum when you DON'T know the exact key - the associative jump ('that CUDA thing', 'the brace rule'). An exact key match leads at score 1.0; otherwise the finder runs (semantic vector search if an embedder is configured, else FTS5 lexical over key/value/why). Each hit carries a normalized 0..1 score and a match_kind. Call this BEFORE answering coding questions that might have a recorded project convention or fundamental rule. project=null (default) searches every scope; a concrete project narrows to it and folds in fundamentals unless you turn that off.",
+        "modelDescription": "Search the entire Seren memory brain in one call. SerenCorpusCallosum is the *fan*: it sends your query to every configured store at once - keyed facts (SerenLoci), episodic/consolidated memory (SerenMemory), and any other stores wired in - and merges the results into a single ranked list using Reciprocal Rank Fusion (it reads each store's rank ORDER, never raw scores, so the merge stays correct even when stores use different embedders). Each hit carries its origin `store`, its `store_rank` within that store, the cross-store `score`, and `base_relevance`; `stores_searched` and `skipped` tell you which stores actually answered (a slow/down store is skipped, never fatal). Call this BEFORE answering anything that might lean on a recorded project convention, a hard-won fact, or past context - when you want the best recall across EVERYTHING and don't care which part of the brain it lives in. Reach for store-specific tools (e.g. search_loci for facts, recall for episodic memory) only when you already know which hemisphere you want.",
         "inputSchema": {
           "type": "object",
           "properties": {
             "query": {
               "type": "string",
-              "description": "Natural-language search query."
+              "description": "Natural-language search query - the associative jump ('that CUDA thing on the Xavier', 'our brace rule')."
             },
             "n_results": {
               "type": "integer",
               "default": 10,
-              "description": "Max hits to return after ranking."
-            },
-            "project": {
-              "type": "string",
-              "description": "Narrow to a project scope. Omit to search every scope (fundamentals + all projects)."
-            },
-            "include_fundamentals": {
-              "type": "boolean",
-              "default": true,
-              "description": "When a project is set, also fold in cross-project fundamentals."
-            },
-            "include_superseded": {
-              "type": "boolean",
-              "default": false,
-              "description": "Include superseded (historical) values."
+              "description": "Max merged hits to return after rank-fusion."
             }
           },
           "required": [
             "query"
           ]
-        }
-      },
-      {
-        "name": "seren_corpuscallosum_forget_fact",
-        "tags": [
-          "seren",
-          "corpuscallosum",
-          "facts"
-        ],
-        "toolReferenceName": "serenForgetFact",
-        "displayName": "Forget Fact",
-        "userDescription": "Retire the live value for a key (kept as history).",
-        "canBeReferencedInPrompt": true,
-        "modelDescription": "Retire the live value for a (project, key) - a soft supersede, 'a flag, not a scalpel'. The row stays as history; it just stops being the live answer, and the key is free to be set fresh later. Returns ok:false if there was no live value to retire. Use when a fact is wrong or outdated, or the user asks to forget a recorded convention.",
-        "inputSchema": {
-          "type": "object",
-          "properties": {
-            "key": {
-              "type": "string",
-              "description": "The key whose live value should be retired."
-            },
-            "project": {
-              "type": "string",
-              "default": "*",
-              "description": "Scope. '*' (default) = fundamentals. A concrete project name for a per-project value."
-            }
-          },
-          "required": [
-            "key"
-          ]
-        }
-      },
-      {
-        "name": "seren_corpuscallosum_history",
-        "tags": [
-          "seren",
-          "corpuscallosum",
-          "facts"
-        ],
-        "toolReferenceName": "serenHistory",
-        "displayName": "Fact History",
-        "userDescription": "Show every value a key has ever held.",
-        "canBeReferencedInPrompt": true,
-        "modelDescription": "Every value a (project, key) has ever held, newest first - the audit trail the strict-supersede rule preserves. Useful for 'what did we used to think the right answer was, and why did it change'. Empty list if the key is unknown.",
-        "inputSchema": {
-          "type": "object",
-          "properties": {
-            "key": {
-              "type": "string",
-              "description": "The key to show the history of."
-            },
-            "project": {
-              "type": "string",
-              "default": "*",
-              "description": "Scope. '*' (default) = fundamentals. A concrete project name for a per-project value."
-            }
-          },
-          "required": [
-            "key"
-          ]
-        }
-      },
-      {
-        "name": "seren_corpuscallosum_list_facts",
-        "tags": [
-          "seren",
-          "corpuscallosum",
-          "facts"
-        ],
-        "toolReferenceName": "serenListFacts",
-        "displayName": "List Facts",
-        "userDescription": "List the facts in a scope.",
-        "canBeReferencedInPrompt": true,
-        "modelDescription": "List facts in scope - a whole project, or everything (omit project). For surveying what the left brain already knows before setting new facts or answering broadly. Pass include_superseded=true to fold in history rows too.",
-        "inputSchema": {
-          "type": "object",
-          "properties": {
-            "project": {
-              "type": "string",
-              "description": "Narrow to a project scope. Omit to list every scope."
-            },
-            "include_superseded": {
-              "type": "boolean",
-              "default": false,
-              "description": "Include superseded (historical) rows, not just live facts."
-            }
-          }
         }
       }
     ]

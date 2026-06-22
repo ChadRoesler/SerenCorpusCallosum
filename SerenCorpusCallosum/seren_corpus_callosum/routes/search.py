@@ -2,7 +2,7 @@
 seren_corpus_callosum.routes.search
 ════════════════════════════════════════════════════════════════════════
 
-POST /search — the one route that matters. Hands the query to the Federation
+POST /search - the one route that matters. Hands the query to the Federation
 on app.state, gets back the RRF-merged ranking, and flattens each FusedHit
 into the wire shape with full provenance. Deliberately the same route name
 the whole family uses, so the callosum presents the exact interface it

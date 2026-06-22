@@ -2,8 +2,8 @@
 Tests for the SCC service shell (app + /search route + config.load_config).
 
 Uses FastAPI's TestClient with a fake transport injected into create_app, so
-the whole HTTP path — lifespan, federation build, route, response shape, auth
-— runs for real without any live store.
+the whole HTTP path - lifespan, federation build, route, response shape, auth
+- runs for real without any live store.
 
 Run: pytest tests/test_app.py   OR   python tests/test_app.py
 """

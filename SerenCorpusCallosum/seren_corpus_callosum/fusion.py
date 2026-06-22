@@ -2,14 +2,14 @@
 seren_corpus_callosum.fusion
 ════════════════════════════════════════════════════════════════════════
 
-The merge heart. Pure, embedder-agnostic, no I/O, no transport — just the
+The merge heart. Pure, embedder-agnostic, no I/O, no transport - just the
 math that turns "N stores each handed me their own ranked list" into "one
 ranked list." Everything else in SCC (adapters, the fan-out, the route) is
 plumbing around this function.
 
-WHY RECIPROCAL RANK FUSION (read this — it's the load-bearing decision):
+WHY RECIPROCAL RANK FUSION (read this - it's the load-bearing decision):
     Each store embeds with whatever model it's configured for, and that
-    model CAN CHANGE (SerenMemory/Loci both ship an embedder-migration
+    model CAN CHANGE (SerenMemory/CorpusCallosum both ship an embedder-migration
     feature). So a cosine distance from store A and a cosine distance from
     store B live in DIFFERENT geometric spaces, and a distance today is not
     a distance tomorrow after a migration. Any merge that compares raw
@@ -17,20 +17,20 @@ WHY RECIPROCAL RANK FUSION (read this — it's the load-bearing decision):
     commensurable.
 
     RRF sidesteps that entirely. It reads only each store's *internal rank
-    ordering* — position in the list the store handed us, which the store
+    ordering* - position in the list the store handed us, which the store
     produced in its own consistent space. A hit's fused score is
 
         weight[store] / (k + rank_in_that_store)
 
     Rank is embedder-agnostic by construction: swap a store's embedder, and
     as long as it still ranks its own hits sensibly, the fusion is
-    unaffected. That's the whole reason this is the right call — not despite
+    unaffected. That's the whole reason this is the right call - not despite
     the embedder being mutable, but BECAUSE it is.
 
 NOTE ON THE CLASSIC-RRF DIFFERENCE:
     Textbook RRF fuses multiple retrievers over the SAME corpus, summing a
     doc's 1/(k+rank) across the lists it appears in. Here each store owns a
-    DIFFERENT corpus — a given hit lives in exactly one store — so there's
+    DIFFERENT corpus - a given hit lives in exactly one store - so there's
     no cross-list summation. The 1/(k+rank) score is used as a cross-source
     *interleaver*: every store's rank-1 is treated as equally good a priori
     (we trust each store's "this is my best" equally, not their magnitudes),
@@ -66,8 +66,8 @@ class Hit:
     id: str                          # the store-native id (namespaced by `store` for global uniqueness)
     content: str                     # the surfaced text (memory content / fact value)
     base_relevance: float            # 1/(1+distance), within-store, in (0,1]. Used by the FLOOR only.
-    raw_distance: Optional[float] = None    # raw cosine distance if the store exposed it — display only
-    native_score: Optional[float] = None    # the store's own score (e.g. Memory's tier-weighted) — display only
+    raw_distance: Optional[float] = None    # raw cosine distance if the store exposed it - display only
+    native_score: Optional[float] = None    # the store's own score (e.g. Memory's tier-weighted) - display only
     metadata: dict = field(default_factory=dict)   # passthrough: tier, why, match_kind, evidence_count, ...
 
 
@@ -81,7 +81,7 @@ class FusedHit:
 
 
 def base_relevance_from_distance(distance: float) -> float:
-    """The one relevance transform both SerenMemory and Loci already use:
+    """The one relevance transform both SerenMemory and CorpusCallosum already use:
     base = 1 / (1 + distance). Monotonic in distance, lands in (0, 1].
     Provided here so adapters compute it identically and the floor compares
     apples to apples WITHIN a store."""
@@ -92,7 +92,7 @@ def apply_floor(hits: list[Hit], min_base_relevance: float) -> list[Hit]:
     """Drop hits below a within-store relevance floor, BEFORE fusion.
 
     Why a floor at all: RRF rank-boosts each store's top hit even when that
-    hit is weak — rank-1-of-garbage still reads as rank 1 and interleaves
+    hit is weak - rank-1-of-garbage still reads as rank 1 and interleaves
     with everyone else's genuinely-good rank 1. The floor stops a store from
     injecting noise into the merge just because the noise was locally
     top-ranked. It compares base_relevance, which IS meaningful within a
@@ -131,7 +131,7 @@ def rrf_fuse(
             ranks; 60 is the canonical default from the original RRF paper
             and is robust. Expose it as config if you want to tune.
         weights: optional {store_name: float}. A store's hits are scaled by
-            its weight — the lever for "trust store X more than Y." Defaults
+            its weight - the lever for "trust store X more than Y." Defaults
             to 1.0 for any store not listed. This is the ONLY place cross-
             store preference is expressed, and it never touches magnitudes.
         n_results: trim the merged list to this many. None = return all.
@@ -140,7 +140,7 @@ def rrf_fuse(
         FusedHits sorted by rrf_score descending. Ties (a store's rank-i vs
         another store's rank-i at equal weight) are broken by a STABLE sort,
         so they fall back to the iteration order of `ranked_lists` then rank
-        — deterministic and, crucially, embedder-agnostic. We never tie-break
+        - deterministic and, crucially, embedder-agnostic. We never tie-break
         on base_relevance/raw_distance, because those aren't comparable across
         stores and letting them decide ties would re-import the very
         magnitude-incomparability RRF exists to avoid.
@@ -149,7 +149,7 @@ def rrf_fuse(
     fused: list[FusedHit] = []
 
     # Build in (store-iteration-order, rank-ascending) order. Python's sort is
-    # stable, so equal rrf_scores will retain exactly this order — that's our
+    # stable, so equal rrf_scores will retain exactly this order - that's our
     # deterministic, magnitude-free tie-break.
     for store, hits in ranked_lists.items():
         w = weights.get(store, 1.0)

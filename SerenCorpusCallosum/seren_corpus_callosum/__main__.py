@@ -3,7 +3,7 @@ Entry point: python -m seren_corpus_callosum [--config path]
              (also the `seren-corpus-callosum` console script)
 
 Boots the FastAPI app with uvicorn using the resolved config. The callosum
-owns no store of its own — it just needs to be up and reachable so a model (or
+owns no store of its own - it just needs to be up and reachable so a model (or
 another service) can POST /search and get the merged, ranked recall back.
 """
 from __future__ import annotations

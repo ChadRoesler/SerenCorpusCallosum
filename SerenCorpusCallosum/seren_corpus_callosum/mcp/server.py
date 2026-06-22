@@ -4,12 +4,12 @@ seren_corpus_callosum.mcp.server
 
 Wires the FastMCP server INTO the existing FastAPI app at /mcp.
 
-Same process, same port. The `search` tool calls the Federation directly — no
+Same process, same port. The `search` tool calls the Federation directly - no
 HTTP round-trip back to ourselves. One install, one approval surface, one set
 of logs. Mounted at /mcp by default; override via SEREN_SCC_MCP_MOUNT.
 
 This is a near-exact sibling of seren_loci.mcp.server / seren_memory.mcp.server
-— the same three transport footguns bite any FastMCP-into-FastAPI mount, so the
+- the same three transport footguns bite any FastMCP-into-FastAPI mount, so the
 same three fixes apply. Kept parallel on purpose: fix one, fix all.
 
 SDK COMPATIBILITY: the modern transport is streamable HTTP
@@ -34,7 +34,7 @@ def mount_mcp_routes(app: FastAPI):
     available). Reads app.state.federation (set by the lifespan handler) to wire
     the tool to live state. Returns the FastMCP instance; the caller MUST enter
     `mcp.session_manager.run()` for the app's lifetime (the streamable-HTTP
-    transport's task group lives there) — see app.py's lifespan.
+    transport's task group lives there) - see app.py's lifespan.
     """
     # Imported here, not at module top, so an import failure of `mcp` bubbles up
     # to app.py's try/except (HTTP-only fallback) rather than crashing load.

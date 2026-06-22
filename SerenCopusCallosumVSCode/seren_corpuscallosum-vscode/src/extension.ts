@@ -1,14 +1,7 @@
 import * as vscode from "vscode";
 import { SerenConfig, promptSetToken } from "./config";
 import { SerenClient } from "./client";
-import {
-  SetFactTool,
-  GetFactTool,
-  SearchTool,
-  ForgetFactTool,
-  HistoryTool,
-  ListFactsTool,
-} from "./tools";
+import { SearchTool } from "./tools";
 
 let statusBar: vscode.StatusBarItem;
 
@@ -19,8 +12,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // -- status bar -------------------------------------------------------------
   statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
   statusBar.command = "serenCorpusCallosum.checkHealth";
-  statusBar.text = "$(database) CorpusCallosum";
-  statusBar.tooltip = "Seren CorpusCallosum - click to check service health";
+  statusBar.text = "$(git-merge) CorpusCallosum";
+  statusBar.tooltip = "Seren CorpusCallosum - the fan over every hall. Click to check service health.";
   statusBar.show();
   context.subscriptions.push(statusBar);
 
@@ -38,6 +31,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           ? "Seren CorpusCallosum: service is reachable ✓"
           : "Seren CorpusCallosum: service is not reachable ✗"
       );
+    }),
+
+    vscode.commands.registerCommand("serenCorpusCallosum.openViewer", async () => {
+      // The Bridge - the federation roster + add/remove stores + live search.
+      await vscode.env.openExternal(vscode.Uri.parse(`${config.endpoint}/viewer`));
     }),
 
     vscode.commands.registerCommand("serenCorpusCallosum.startService", async () => {
@@ -64,14 +62,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     })
   );
 
-  // -- register LM tools (the CorpusCallosum 6) -----------------------------------------
+  // -- register the one LM tool: the federated search -------------------------
+  // SCC is the fan, not a store. Its value to Copilot is a single search that
+  // reaches every hall at once - so it ships exactly one tool, not a CRUD set.
   context.subscriptions.push(
-    vscode.lm.registerTool("seren_corpuscallosum_set_fact", new SetFactTool(client)),
-    vscode.lm.registerTool("seren_corpuscallosum_get_fact", new GetFactTool(client)),
-    vscode.lm.registerTool("seren_corpuscallosum_search", new SearchTool(client)),
-    vscode.lm.registerTool("seren_corpuscallosum_forget_fact", new ForgetFactTool(client)),
-    vscode.lm.registerTool("seren_corpuscallosum_history", new HistoryTool(client)),
-    vscode.lm.registerTool("seren_corpuscallosum_list_facts", new ListFactsTool(client))
+    vscode.lm.registerTool("seren_corpuscallosum_search", new SearchTool(client))
   );
 
   // -- startup health check ---------------------------------------------------
@@ -111,11 +106,11 @@ export function deactivate(): void {
 
 function setStatusBar(alive: boolean): void {
   if (alive) {
-    statusBar.text = "$(database) CorpusCallosum ✓";
+    statusBar.text = "$(git-merge) CorpusCallosum ✓";
     statusBar.backgroundColor = undefined;
     statusBar.tooltip = "Seren CorpusCallosum - service reachable";
   } else {
-    statusBar.text = "$(database) CorpusCallosum ✗";
+    statusBar.text = "$(git-merge) CorpusCallosum ✗";
     statusBar.backgroundColor = new vscode.ThemeColor(
       "statusBarItem.warningBackground"
     );

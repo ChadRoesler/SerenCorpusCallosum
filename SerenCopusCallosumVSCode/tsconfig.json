@@ -4,13 +4,13 @@
     "module": "commonjs",
     "lib": ["ES2022"],
     "outDir": "./out",
-    "rootDir": "./src",
+    "rootDir": "./seren_corpuscallosum-vscode/src",
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
     "sourceMap": true,
     "declaration": false
   },
-  "include": ["src/**/*.ts"],
+  "include": ["seren_corpuscallosum-vscode/src/**/*.ts"],
   "exclude": ["node_modules", "dist", "out"]
 }

@@ -9,7 +9,7 @@ plumbing around this function.
 
 WHY RECIPROCAL RANK FUSION (read this - it's the load-bearing decision):
     Each store embeds with whatever model it's configured for, and that
-    model CAN CHANGE (SerenMemory/CorpusCallosum both ship an embedder-migration
+    model CAN CHANGE (SerenMemory/Loci both ship an embedder-migration
     feature). So a cosine distance from store A and a cosine distance from
     store B live in DIFFERENT geometric spaces, and a distance today is not
     a distance tomorrow after a migration. Any merge that compares raw
@@ -81,7 +81,7 @@ class FusedHit:
 
 
 def base_relevance_from_distance(distance: float) -> float:
-    """The one relevance transform both SerenMemory and CorpusCallosum already use:
+    """The one relevance transform both SerenMemory and Loci already use:
     base = 1 / (1 + distance). Monotonic in distance, lands in (0, 1].
     Provided here so adapters compute it identically and the floor compares
     apples to apples WITHIN a store."""

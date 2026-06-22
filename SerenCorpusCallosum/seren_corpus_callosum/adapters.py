@@ -4,15 +4,15 @@ seren_corpus_callosum.adapters
 
 An adapter's ONE job: call a store's search and map its native response into
 the common `Hit` shape, PRESERVING the store's ranking order (list position
-is rank — fusion depends on it). Everything store-specific lives here and
+is rank - fusion depends on it). Everything store-specific lives here and
 nowhere else.
 
 THE EXTENSIBILITY MODEL (why the gift is a config line):
     One adapter per store *protocol*, not per instance. `SerenMemoryAdapter`
-    speaks the SerenMemory `/search` contract — so it serves EVERY
+    speaks the SerenMemory `/search` contract - so it serves EVERY
     SerenMemory-speaking instance you ever fan in. Adding a tenth dedicated
     memory is a config entry against this same adapter, zero new code.
-    `SerenLociAdapter` speaks Loci's facts-search shape. A genuinely new
+    `SerenCorpusCallosumAdapter` speaks CorpusCallosum's facts-search shape. A genuinely new
     kind of store gets a new adapter here and a registry entry below; that's
     the only time "hook in a store" costs code.
 
@@ -121,23 +121,23 @@ class SerenMemoryAdapter(_BaseAdapter):
         return hits
 
 
-class SerenLociAdapter(_BaseAdapter):
-    """Speaks Loci's facts-search shape (verified against a live search_loci call):
+class SerenCorpusCallosumAdapter(_BaseAdapter):
+    """Speaks CorpusCallosum's facts-search shape (verified against a live search_loci call):
 
         -> {query, project, finder, hits: [{id, project, key, value, why,
             score, match_kind, source, raw_distance}]}
 
     A fact's surfaced content is its `value`; key/why/match_kind ride in
-    metadata. Loci's `score` IS the within-store base relevance already
+    metadata. CorpusCallosum's `score` IS the within-store base relevance already
     (1/(1+distance), and 1.0 for an exact-key hit), so we use it directly
-    rather than recomputing — that way exact matches correctly read as 1.0.
+    rather than recomputing - that way exact matches correctly read as 1.0.
 
-    HTTP CONTRACT — CONFIRMED against seren_loci/routes/search.py +
+    HTTP CONTRACT - CONFIRMED against seren_loci/routes/search.py +
     models/schemas.py: POST /search with SearchRequest
     {query, project?, n_results, include_fundamentals, include_superseded}
-    -> SearchResponse {query, project, hits: [SearchHit], finder}. Loci's
+    -> SearchResponse {query, project, hits: [SearchHit], finder}. CorpusCallosum's
     `score` is, in its own schema's words, "the SCC common currency":
-    normalized 0..1, exact-key hit = 1.0 — so using it directly as
+    normalized 0..1, exact-key hit = 1.0 - so using it directly as
     base_relevance is the intended design, not a convenient guess. Path is
     still overridable via options.search_path for non-standard deployments.
     """
@@ -152,7 +152,7 @@ class SerenLociAdapter(_BaseAdapter):
             "include_fundamentals": bool(opts.get("include_fundamentals", True)),
             "include_superseded": bool(opts.get("include_superseded", False)),
         }
-        # Optional project scope — None means "search every scope".
+        # Optional project scope - None means "search every scope".
         if opts.get("project") is not None:
             payload["project"] = opts["project"]
 
@@ -184,7 +184,7 @@ class SerenLociAdapter(_BaseAdapter):
 # adding one class above and one line here. That's the whole extension point.
 _REGISTRY: dict[str, type[_BaseAdapter]] = {
     SerenMemoryAdapter.type: SerenMemoryAdapter,
-    SerenLociAdapter.type: SerenLociAdapter,
+    SerenCorpusCallosumAdapter.type: SerenCorpusCallosumAdapter,
 }
 
 
@@ -194,7 +194,7 @@ class UnknownStoreType(ValueError):
 
 def build_adapter(cfg: StoreConfig, transport: Transport) -> StoreAdapter:
     """Construct the adapter for a store config. Raises UnknownStoreType for
-    an unregistered type — the federation catches this and skips the store
+    an unregistered type - the federation catches this and skips the store
     (graceful degradation), so a typo in one entry never sinks the whole fan."""
     cls = _REGISTRY.get(cfg.type)
     if cls is None:
@@ -206,6 +206,13 @@ def build_adapter(cfg: StoreConfig, transport: Transport) -> StoreAdapter:
 def register_adapter(type_key: str, cls: type[_BaseAdapter]) -> None:
     """Register a custom adapter type at runtime (for out-of-tree store kinds)."""
     _REGISTRY[type_key] = cls
+
+
+def known_store_types() -> set[str]:
+    """The store types with a registered adapter. Lets the add-store API reject
+    an unknown type up front (a clean 400) instead of accepting it and having
+    the fan silently skip it forever."""
+    return set(_REGISTRY)
 
 
 def _as_float_or_none(v: Any) -> float | None:

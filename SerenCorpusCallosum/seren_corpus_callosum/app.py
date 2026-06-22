@@ -3,8 +3,8 @@ seren_corpus_callosum.app
 ════════════════════════════════════════════════════════════════════════
 
 The FastAPI application for the corpus callosum. Wires the federation (built
-from config), the /search route, optional bearer auth, and — when the [mcp]
-extra is installed — an MCP surface so a connected model can call the fan
+from config), the /search route, optional bearer auth, and - when the [mcp]
+extra is installed - an MCP surface so a connected model can call the fan
 directly via the `search` tool.
 
 ENDPOINTS:
@@ -12,11 +12,11 @@ ENDPOINTS:
     GET  /health   - liveness
     POST /search   - fan across all stores, RRF-merged, ranked
 
-Deliberately parallel to SerenLoci/SerenMemory: same create_app factory, same
+Deliberately parallel to SerenCorpusCallosum/SerenMemory: same create_app factory, same
 lifespan-into-app.state shape, same conditional-MCP-mount with HTTP-only
 fallback, same trusted-LAN bearer posture, same public-paths set. The tell of
 what THIS service is: there's no store of its own. It owns nothing and
-remembers nothing — it only fans, floors, and merges what the hemispheres
+remembers nothing - it only fans, floors, and merges what the hemispheres
 hand back. Read-only by construction.
 """
 from __future__ import annotations
@@ -72,6 +72,7 @@ def create_app(config: CorpusCallosumConfig | None = None, transport=None) -> Fa
                 tx = HttpTransport(timeout=cfg.federation.per_store_timeout_s)
             if hasattr(tx, "__aenter__"):
                 tx = await stack.enter_async_context(tx)
+            app.state.transport = tx  # held so add/remove store can rebuild the live federation
 
             federation = Federation(cfg.federation, tx)
             app.state.federation = federation
@@ -99,7 +100,7 @@ def create_app(config: CorpusCallosumConfig | None = None, transport=None) -> Fa
                       f"continuing without MCP")
 
             # The streamable-HTTP transport needs its session manager's task
-            # group entered explicitly — a mounted sub-app's own lifespan doesn't
+            # group entered explicitly - a mounted sub-app's own lifespan doesn't
             # fire under Starlette. (Same fix the rest of the family carries.)
             session_manager = getattr(mcp_server, "session_manager", None)
             if session_manager is not None:

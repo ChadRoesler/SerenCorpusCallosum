@@ -3,8 +3,8 @@ seren_corpus_callosum
 ═════════════════════
 
 The read-only corpus callosum: a fan that federates N memory stores into one
-ranked recall surface. Left brain (Loci, structured facts) + right brain
-(SerenMemory, episodic) + however many more you hook in — merged by
+ranked recall surface. Left brain (SerenLoci, structured facts) + right brain
+(SerenMemory, episodic) + however many more you hook in - merged by
 Reciprocal Rank Fusion, which is embedder-agnostic by construction so the
 merge survives any store changing its embedder underneath it.
 

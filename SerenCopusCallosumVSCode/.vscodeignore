@@ -1,6 +1,7 @@
-seren_memory-vscode/src
-seren_memory-vscode/out
-seren_memory-vscode/esbuild.js
+seren_corpuscallosum-vscode/src
+seren_corpuscallosum-vscode/out
+seren_corpuscallosum-vscode/esbuild.js
+seren_corpuscallosum-vscode/.vscodeignore
 node_modules
 test
 vitest.config.ts

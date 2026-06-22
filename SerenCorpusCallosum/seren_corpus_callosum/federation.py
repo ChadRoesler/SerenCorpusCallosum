@@ -9,7 +9,7 @@ floor, and RRF-fuses the lot into one ranked list with provenance.
 GRACEFUL DEGRADATION IS THE FLOOR, NOT A FEATURE (Nano-floor ethos):
     A store that's down, slow, mis-typed, or throwing just contributes an
     empty list. The merge proceeds with whoever answered. One sick store
-    never sinks the fan — partial memory beats a 500. Every failure mode
+    never sinks the fan - partial memory beats a 500. Every failure mode
     (timeout, transport error, unknown type, malformed response) collapses
     to "this store gave nothing this turn."
 
@@ -46,7 +46,7 @@ class Federation:
         self._config = config
         self._transport = transport
         self._stores: list[_BoundStore] = []
-        self._skipped: list[tuple[str, str]] = []  # (store_name, reason) — for diagnostics
+        self._skipped: list[tuple[str, str]] = []  # (store_name, reason) - for diagnostics
 
         for cfg in config.enabled_stores:
             try:
@@ -108,5 +108,5 @@ class Federation:
             return name, list(hits) if hits else []
         except asyncio.TimeoutError:
             return name, []
-        except Exception:  # noqa: BLE001 — a sick store degrades, it doesn't crash the fan
+        except Exception:  # noqa: BLE001 - a sick store degrades, it doesn't crash the fan
             return name, []

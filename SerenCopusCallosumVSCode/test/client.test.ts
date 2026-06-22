@@ -1,13 +1,10 @@
 /**
- * Unit tests for SerenClient (the left brain's HTTP client).
+ * Unit tests for SerenClient (the callosum's HTTP client).
  *
- * Uses vitest + fetch mocking (no VS Code host, no live service).
- * The `vscode` module is aliased to test/mocks/vscode.ts in vitest.config.ts
- * so the import chain (client -> config -> vscode) resolves cleanly.
- *
- * Pattern: for each method, stub globalThis.fetch to return a canned response,
- * call the method, assert the right URL/method/body was sent and the return
- * value is passed through.
+ * SCC is the read-only fan, so the client is tiny: one federated search plus a
+ * liveness ping. These tests stub globalThis.fetch (no VS Code host, no live
+ * service); the `vscode` module is aliased to test/mocks/vscode.ts in
+ * vitest.config.ts so the import chain (client -> config -> vscode) resolves.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
@@ -55,128 +52,42 @@ describe("ping", () => {
   });
 });
 
-// -- setFact ------------------------------------------------------------------
-
-describe("setFact", () => {
-  it("POSTs to /fact with project, key, value (why omitted)", async () => {
-    mockFetch(200, { ok: true, superseded: null });
-    const result = await makeClient().setFact("posh.brace_style", "new line", undefined, "*");
-    const [url, init] = lastFetch();
-    expect(url).toBe("http://localhost:7423/fact");
-    expect(init.method).toBe("POST");
-    expect(JSON.parse(init.body as string)).toEqual({
-      project: "*",
-      key: "posh.brace_style",
-      value: "new line",
-    });
-    expect(result).toEqual({ ok: true, superseded: null });
-  });
-
-  it("includes why when provided and uses a concrete project", async () => {
-    mockFetch(200, { ok: true });
-    await makeClient().setFact("cuda.no_vmm", "ON at compile time", "env var not honored at runtime", "seren-memory");
-    const [, init] = lastFetch();
-    expect(JSON.parse(init.body as string)).toEqual({
-      project: "seren-memory",
-      key: "cuda.no_vmm",
-      value: "ON at compile time",
-      why: "env var not honored at runtime",
-    });
-  });
-
-  it("defaults project to fundamentals (*)", async () => {
-    mockFetch(200, { ok: true });
-    await makeClient().setFact("k", "v");
-    const [, init] = lastFetch();
-    expect(JSON.parse(init.body as string).project).toBe("*");
-  });
-});
-
-// -- getFact ------------------------------------------------------------------
-
-describe("getFact", () => {
-  it("GETs /fact with project + key query", async () => {
-    mockFetch(200, { project: "*", key: "k", value: "v" });
-    await makeClient().getFact("posh.brace_style");
-    const [url, init] = lastFetch();
-    expect(url).toBe("http://localhost:7423/fact?project=*&key=posh.brace_style");
-    expect(init.method).toBe("GET");
-    expect(init.body).toBeUndefined();
-  });
-});
-
-// -- factHistory --------------------------------------------------------------
-
-describe("factHistory", () => {
-  it("GETs /fact/history with project + key", async () => {
-    mockFetch(200, { history: [], count: 0 });
-    await makeClient().factHistory("k", "seren-memory");
-    const [url, init] = lastFetch();
-    expect(url).toBe("http://localhost:7423/fact/history?project=seren-memory&key=k");
-    expect(init.method).toBe("GET");
-  });
-});
-
-// -- forgetFact ---------------------------------------------------------------
-
-describe("forgetFact", () => {
-  it("DELETEs /fact with project + key", async () => {
-    mockFetch(200, { ok: true });
-    await makeClient().forgetFact("k");
-    const [url, init] = lastFetch();
-    expect(url).toBe("http://localhost:7423/fact?project=*&key=k");
-    expect(init.method).toBe("DELETE");
-    expect(init.body).toBeUndefined();
-  });
-});
-
-// -- listFacts ----------------------------------------------------------------
-
-describe("listFacts", () => {
-  it("GETs /facts with no query when no args", async () => {
-    mockFetch(200, { facts: [], count: 0 });
-    await makeClient().listFacts();
-    const [url, init] = lastFetch();
-    expect(url).toBe("http://localhost:7423/facts");
-    expect(init.method).toBe("GET");
-  });
-
-  it("adds project and include_superseded when set", async () => {
-    mockFetch(200, { facts: [], count: 0 });
-    await makeClient().listFacts("seren-memory", true);
-    const [url] = lastFetch();
-    expect(url).toBe("http://localhost:7423/facts?project=seren-memory&include_superseded=true");
-  });
-});
-
 // -- search -------------------------------------------------------------------
 
 describe("search", () => {
-  it("POSTs to /search with defaults (project omitted)", async () => {
-    mockFetch(200, { hits: [], finder: "lexical" });
-    await makeClient().search("cuda runtime", 5);
+  it("POSTs to /search with just query + n_results", async () => {
+    mockFetch(200, { query: "cuda", hits: [], stores_searched: [], skipped: [] });
+    const result = await makeClient().search("cuda runtime", 5);
     const [url, init] = lastFetch();
     expect(url).toBe("http://localhost:7423/search");
     expect(init.method).toBe("POST");
+    // SCC only honors {query, n_results} - the client must not smuggle Loci-style
+    // fields (project/include_*) that would just be silently dropped.
     expect(JSON.parse(init.body as string)).toEqual({
       query: "cuda runtime",
       n_results: 5,
-      include_fundamentals: true,
-      include_superseded: false,
     });
+    expect(result).toEqual({ query: "cuda", hits: [], stores_searched: [], skipped: [] });
   });
 
-  it("includes project when provided", async () => {
+  it("defaults n_results to 10", async () => {
     mockFetch(200, { hits: [] });
-    await makeClient().search("brace", 10, "seren-memory", false, true);
+    await makeClient().search("anything");
     const [, init] = lastFetch();
-    expect(JSON.parse(init.body as string)).toEqual({
-      query: "brace",
-      n_results: 10,
-      include_fundamentals: false,
-      include_superseded: true,
-      project: "seren-memory",
-    });
+    expect(JSON.parse(init.body as string)).toEqual({ query: "anything", n_results: 10 });
+  });
+
+  it("passes the fused, provenance-bearing response through untouched", async () => {
+    const payload = {
+      query: "q",
+      hits: [
+        { store: "facts", id: "1", content: "x", score: 0.0161, store_rank: 1, base_relevance: 0.84 },
+      ],
+      stores_searched: ["facts", "episodic"],
+      skipped: [{ name: "down-store", reason: "timeout" }],
+    };
+    mockFetch(200, payload);
+    expect(await makeClient().search("q")).toEqual(payload);
   });
 });
 
@@ -184,31 +95,18 @@ describe("search", () => {
 
 describe("SerenApiError", () => {
   it("is thrown on non-2xx responses", async () => {
-    mockFetch(404, { detail: "no live fact" });
-    await expect(makeClient().getFact("nope")).rejects.toBeInstanceOf(SerenApiError);
+    mockFetch(401, { error: "unauthorized" });
+    await expect(makeClient().search("q")).rejects.toBeInstanceOf(SerenApiError);
   });
 
   it("carries status and body", async () => {
-    mockFetch(404, { detail: "no live fact" });
+    mockFetch(401, { error: "unauthorized" });
     try {
-      await makeClient().getFact("nope");
+      await makeClient().search("q");
     } catch (e) {
       expect(e).toBeInstanceOf(SerenApiError);
-      expect((e as SerenApiError).status).toBe(404);
-      expect((e as SerenApiError).body).toEqual({ detail: "no live fact" });
+      expect((e as SerenApiError).status).toBe(401);
+      expect((e as SerenApiError).body).toEqual({ error: "unauthorized" });
     }
-  });
-});
-
-// -- URL encoding -------------------------------------------------------------
-
-describe("URL encoding", () => {
-  it("encodes special characters in keys (now query params, not path)", async () => {
-    mockFetch(200, { value: "v" });
-    await makeClient().getFact("weird/key with spaces", "proj a");
-    const [url] = lastFetch();
-    expect(url).toBe(
-      "http://localhost:7423/fact?project=proj%20a&key=weird%2Fkey%20with%20spaces"
-    );
   });
 });

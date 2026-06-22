@@ -1,5 +1,4 @@
 <#
-<#
 .SYNOPSIS
     Build, test, package, and optionally publish the Seren CorpusCallosum VS Code extension.
 

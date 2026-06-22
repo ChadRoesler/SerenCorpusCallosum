@@ -49,7 +49,7 @@ class HttpTransport:
 
     async def post_json(self, url: str, payload: dict[str, Any]) -> dict[str, Any]:
         # Lazy client so the transport also works without the context-manager
-        # form (one-shot client per call — fine for low-traffic homelab use).
+        # form (one-shot client per call - fine for low-traffic homelab use).
         if self._client is None:
             async with self._httpx.AsyncClient(timeout=self._timeout) as client:
                 resp = await client.post(url, json=payload)

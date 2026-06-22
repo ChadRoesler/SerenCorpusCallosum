@@ -9,7 +9,7 @@ updates:
     commit-message:
       prefix: "ci"
 
-  # Python deps for the loci package (pyproject lives in SerenCorpusCallosum/).
+  # Python deps for the corpuscallosum package (pyproject lives in SerenCorpusCallosum/).
   - package-ecosystem: "pip"
     directory: "/SerenCorpusCallosum"
     schedule:

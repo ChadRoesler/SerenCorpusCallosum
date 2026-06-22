@@ -15,7 +15,7 @@ export class SerenConfig {
   get startCommand(): string {
     return vscode.workspace
       .getConfiguration("serenCorpusCallosum")
-      .get<string>("startCommand", "python -m seren_corpuscallosum");
+      .get<string>("startCommand", "seren-corpus-callosum");
   }
 
   /** When true, suppress the "service not reachable - start it?" prompt

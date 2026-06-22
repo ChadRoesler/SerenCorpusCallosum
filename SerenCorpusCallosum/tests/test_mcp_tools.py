@@ -2,7 +2,7 @@
 Tests for the SCC `search` MCP tool implementation.
 
 Gated on the `mcp` SDK being installed (the [mcp] extra). The tool impl is
-exercised DIRECTLY — `await SccToolImpl(fed).search(...)` — with a fake
+exercised DIRECTLY - `await SccToolImpl(fed).search(...)` - with a fake
 federation, so we test the flattening/provenance shape without an MCP client
 or an HTTP roundtrip.
 

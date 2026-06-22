@@ -75,7 +75,7 @@ def test_fans_and_interleaves_two_stores():
 
 
 def test_dead_store_degrades_gracefully():
-    # Loci raises; the fan returns mem's hits, no crash.
+    # CorpusCallosum raises; the fan returns mem's hits, no crash.
     t = FakeTransport({"http://mem/search": MEM_RESP,
                        "http://loci/search": ConnectionError("loci down")})
     fed = Federation(_two_store_config(), t)
@@ -84,7 +84,7 @@ def test_dead_store_degrades_gracefully():
 
 
 def test_slow_store_times_out_and_degrades():
-    # Loci sleeps past the timeout; mem still answers.
+    # CorpusCallosum sleeps past the timeout; mem still answers.
     t = FakeTransport({"http://mem/search": MEM_RESP,
                        "http://loci/search": {"__sleep__": 0.5}})
     fed = Federation(_two_store_config(timeout=0.05), t)
@@ -93,7 +93,7 @@ def test_slow_store_times_out_and_degrades():
 
 
 def test_per_store_floor_drops_then_fan_proceeds():
-    # Loci floored at 0.9 -> both loci hits (0.53, 0.45) dropped -> mem only.
+    # CorpusCallosum floored at 0.9 -> both loci hits (0.53, 0.45) dropped -> mem only.
     t = FakeTransport({"http://mem/search": MEM_RESP, "http://loci/search": LOCI_RESP})
     fed = Federation(_two_store_config(loci_floor=0.9), t)
     fused = asyncio.run(fed.search("q"))

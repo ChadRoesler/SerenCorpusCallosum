@@ -12,20 +12,33 @@ export class SerenApiError extends Error {
 }
 
 /**
- * HTTP client for SerenCorpusCallosum - the left brain. Every method's payload matches
- * the actual route contract on the SerenCorpusCallosum side, verified against the live
- * pydantic schemas. Don't drift; the backend uses pydantic v2 with the default
- * extra="ignore", so an unknown field is SILENTLY DROPPED - a typo'd field
- * name doesn't 400, it just vanishes and the call appears to "succeed" with
- * default behaviour.
+ * HTTP client for SerenCorpusCallosum - the callosum, the read-only fan over
+ * every Seren memory store. It owns no data of its own, so this client is
+ * deliberately small: one federated search, plus a liveness ping. There is no
+ * set / get / forget here - SCC has nothing to write to. Keyed facts live in
+ * SerenLoci, episodes in SerenMemory; the callosum only fans across them and
+ * RRF-merges what they hand back.
+ *
+ * CONTRACT (verified against the SCC routes - don't drift):
+ *   POST /search  { query, n_results }
+ *     -> { query,
+ *          hits: [{ store, id, content, score, store_rank, base_relevance,
+ *                   native_score?, raw_distance?, metadata }],
+ *          stores_searched, skipped }
+ *     SCC's SearchRequest is just {query, n_results}; pydantic ignores extras,
+ *     so sending more fields is silently dropped, not honored - don't bother.
+ *   GET  /health   liveness.
+ *   GET  /         service info + the stores it's fanning.
+ *   GET  /viewer   the Bridge UI (opened by a command, not this client).
+ *   GET/POST/DELETE /stores  roster management - deliberately NOT surfaced as
+ *     an LM tool (you don't want a model wiring in stores mid-completion); it
+ *     lives in the viewer, behind the token.
  *
  * Every request takes an optional AbortSignal so the VS Code cancellation
  * token from a tool's invoke() can actually cancel the in-flight fetch.
  */
 export class SerenClient {
   constructor(private readonly config: SerenConfig) {}
-
-  // -- helpers ----------------------------------------------------------------
 
   private async request<T>(
     method: string,
@@ -59,22 +72,8 @@ export class SerenClient {
     return json as T;
   }
 
-  private get<T>(path: string, signal?: AbortSignal): Promise<T> {
-    return this.request<T>("GET", path, undefined, signal);
-  }
-
   private post<T>(path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
     return this.request<T>("POST", path, body, signal);
-  }
-
-  private del<T>(path: string, signal?: AbortSignal): Promise<T> {
-    return this.request<T>("DELETE", path, undefined, signal);
-  }
-
-  /** Build a ?project=&key= query string. project/key are free-form strings
-   *  (a key like 'posh.brace_style', a project of '*'), so always encode. */
-  private factQuery(key: string, project: string): string {
-    return `?project=${encodeURIComponent(project)}&key=${encodeURIComponent(key)}`;
   }
 
   // -- health -----------------------------------------------------------------
@@ -88,75 +87,11 @@ export class SerenClient {
     }
   }
 
-  // -- facts ------------------------------------------------------------------
-  //
-  // CONTRACT NOTES (don't drift):
-  //   POST   /fact          FactWrite -> { project, key, value, why? }
-  //                         project omitted defaults to '*' (fundamentals).
-  //                         Returns { ok, fact, superseded: id|null }.
-  //   GET    /fact          ?project=&key=  -> the live Fact, or 404 if none.
-  //   GET    /fact/history  ?project=&key=  -> { history: Fact[], count }.
-  //   DELETE /fact          ?project=&key=  -> soft-retire the live value (404
-  //                         if nothing live to retire).
-  //   GET    /facts         ?project=&include_superseded=  -> { facts, count }.
-  //   POST   /search        SearchRequest -> {
-  //     query, n_results (NOT `limit`), project? (null = all scopes),
-  //     include_fundamentals, include_superseded
-  //   }
-  //   NOTE: there is no /short, /near, /long, /brief, /consolidate, /drafts -
-  //   that's the right brain (SerenMemory). CorpusCallosum is deterministic facts.
+  // -- the one tool that matters ----------------------------------------------
 
-  async setFact(
-    key: string,
-    value: string,
-    why?: string,
-    project: string = "*",
-    signal?: AbortSignal
-  ): Promise<unknown> {
-    const body: Record<string, unknown> = { project, key, value };
-    if (why !== undefined && why !== "") body.why = why;
-    return this.post("/fact", body, signal);
-  }
-
-  async getFact(key: string, project: string = "*", signal?: AbortSignal): Promise<unknown> {
-    return this.get(`/fact${this.factQuery(key, project)}`, signal);
-  }
-
-  async factHistory(key: string, project: string = "*", signal?: AbortSignal): Promise<unknown> {
-    return this.get(`/fact/history${this.factQuery(key, project)}`, signal);
-  }
-
-  async forgetFact(key: string, project: string = "*", signal?: AbortSignal): Promise<unknown> {
-    return this.del(`/fact${this.factQuery(key, project)}`, signal);
-  }
-
-  async listFacts(
-    project?: string,
-    include_superseded: boolean = false,
-    signal?: AbortSignal
-  ): Promise<unknown> {
-    const params = new URLSearchParams();
-    if (project !== undefined && project !== null) params.set("project", project);
-    if (include_superseded) params.set("include_superseded", "true");
-    const qs = params.toString() ? `?${params.toString()}` : "";
-    return this.get(`/facts${qs}`, signal);
-  }
-
-  async search(
-    query: string,
-    n_results: number = 10,
-    project?: string,
-    include_fundamentals: boolean = true,
-    include_superseded: boolean = false,
-    signal?: AbortSignal
-  ): Promise<unknown> {
-    const body: Record<string, unknown> = {
-      query,
-      n_results,
-      include_fundamentals,
-      include_superseded,
-    };
-    if (project !== undefined && project !== null) body.project = project;
-    return this.post("/search", body, signal);
+  /** Fan a query across every configured store and return the RRF-merged,
+   *  ranked list with full provenance. */
+  async search(query: string, n_results: number = 10, signal?: AbortSignal): Promise<unknown> {
+    return this.post("/search", { query, n_results }, signal);
   }
 }

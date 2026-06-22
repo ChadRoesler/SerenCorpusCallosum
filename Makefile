@@ -16,8 +16,8 @@
 SHELL        := pwsh.exe
 .SHELLFLAGS  := -NoProfile -NonInteractive -Command
 
-PKG_DIR    := SerenLoci
-VSCODE_DIR := SerenLociVSCode
+PKG_DIR    := SerenCorpusCallosum
+VSCODE_DIR := SerenCorpusCallosumVSCode
 VENV_BASE  := .venv-base
 VENV_MCP   := .venv-mcp
 VENV_CORP  := .venv-corp

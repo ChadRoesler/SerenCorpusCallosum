@@ -76,7 +76,7 @@ def test_weights_express_cross_store_trust():
     b = [_hit("B", "b1", 0.10)]
     fused = rrf_fuse({"A": a, "B": b}, k=60, weights={"B": 2.0})
     assert _order(fused) == ["B:b1", "A:a1"]
-    # ...and note A:a1 has the far higher base_relevance — proving the weight,
+    # ...and note A:a1 has the far higher base_relevance - proving the weight,
     # not the magnitude, is what moved it. Magnitude never entered the sort.
 
 
@@ -98,7 +98,7 @@ def test_floor_then_fuse_pipeline():
 
 
 def test_graceful_empty_and_missing_stores():
-    # A store that's down contributes an empty list — no crash, just absent.
+    # A store that's down contributes an empty list - no crash, just absent.
     a = [_hit("A", "a1", 0.9)]
     fused = rrf_fuse({"A": a, "B": []}, k=60)
     assert _order(fused) == ["A:a1"]

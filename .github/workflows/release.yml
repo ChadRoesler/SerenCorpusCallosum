@@ -135,21 +135,21 @@ jobs:
           node-version: "20"
 
       - name: Stamp version from the git tag
-        working-directory: SerenCopusCallosumVSCode
+        working-directory: SerenCorpusCallosumVSCode
         run: npm pkg set version="${GITHUB_REF#refs/tags/v}"
 
       - name: Install dependencies
-        working-directory: SerenCopusCallosumVSCode
+        working-directory: SerenCorpusCallosumVSCode
         run: npm install
 
       - name: Build and package
-        working-directory: SerenCopusCallosumVSCode
+        working-directory: SerenCorpusCallosumVSCode
         run: |
           npm run build -- --production
           npm run package
 
       - name: Publish to the VS Code Marketplace
-        working-directory: SerenCopusCallosumVSCode
+        working-directory: SerenCorpusCallosumVSCode
         run: npx @vscode/vsce publish --packagePath $(ls *.vsix)
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
@@ -157,4 +157,4 @@ jobs:
       - name: Upload .vsix to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: SerenCopusCallosumVSCode/*.vsix
+          files: SerenCorpusCallosumVSCode/*.vsix

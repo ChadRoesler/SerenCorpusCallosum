@@ -27,6 +27,10 @@ dependencies = [
     "pydantic>=2.9.0",
     "pyyaml>=6.0.2",
     "httpx>=0.27.0",
+    # The shared Seren core: server/tls config blocks, token resolution, the
+    # version helper, the auth middleware. Pinned <1 - a MAJOR (an un-defaultable
+    # security change) is the only thing that ever forces a bump here.
+    "seren-meninges>=0.0.1,<1",
 ]
 
 [project.optional-dependencies]

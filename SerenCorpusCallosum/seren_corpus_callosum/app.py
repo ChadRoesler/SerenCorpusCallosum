@@ -21,7 +21,6 @@ hand back. Read-only by construction.
 """
 from __future__ import annotations
 
-import hmac
 import time
 from contextlib import asynccontextmanager, AsyncExitStack
 from pathlib import Path
@@ -34,28 +33,25 @@ from .federation import Federation
 from .routes import search as search_routes
 from .routes import stores as stores_routes
 
+from seren_meninges import get_version
+from seren_meninges.auth import bearer_auth_middleware
+
 # The viewer HTML ships inside the package (package-data glob in pyproject).
 # Served at GET /viewer; 404s gracefully if it wasn't packaged.
 _VIEWER_PATH = Path(__file__).parent / "viewer" / "callosum.html"
 
-
-# Single source of truth for the reported version: the installed wheel's
-# metadata when present, a harmless placeholder for an editable checkout.
-# Never let version lookup break startup.
-try:
-    from importlib.metadata import version as _pkg_version, PackageNotFoundError
-    try:
-        APP_VERSION = _pkg_version("seren-corpus-callosum")
-    except PackageNotFoundError:
-        APP_VERSION = "0+unknown"
-except Exception:  # noqa: BLE001
-    APP_VERSION = "0+unknown"
+# Reported version via the shared helper: installed-wheel metadata, falling back
+# to a harmless placeholder for a source checkout. get_version never raises.
+APP_VERSION = get_version("seren-corpus-callosum", fallback="0+unknown")
 
 
 def create_app(config: CorpusCallosumConfig | None = None, transport=None) -> FastAPI:
     """Build the app. `transport` is injectable so tests can pass a fake
     (real deployments leave it None and get the httpx-backed HttpTransport)."""
     cfg = config or load_config()
+    # Resolve the inbound bearer ONCE at startup (a keyring lookup per request
+    # would be slow). The shared ServerConfig carries resolve_bearer for free.
+    bearer = cfg.server.resolve_bearer()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -119,23 +115,10 @@ def create_app(config: CorpusCallosumConfig | None = None, transport=None) -> Fa
         lifespan=lifespan,
     )
 
-    # -- Optional bearer auth --
-    # Same trusted-LAN posture as the rest of Seren: a set token is enforced on
-    # everything except the public shell (/, /health); empty = no auth.
-    @app.middleware("http")
-    async def bearer_auth(request: Request, call_next):
-        token = cfg.server.bearer_token
-        if token:
-            public = request.url.path in ("/", "/health", "/viewer")
-            if not public:
-                auth = request.headers.get("authorization", "")
-                expected = f"Bearer {token}"
-                # Constant-time compare so the 401 path doesn't leak how many
-                # leading bytes matched. Encode so non-ASCII can't raise.
-                if not hmac.compare_digest(auth.encode("utf-8"),
-                                           expected.encode("utf-8")):
-                    return JSONResponse({"error": "unauthorized"}, status_code=401)
-        return await call_next(request)
+    # -- Bearer auth (shared) --
+    # constant-time compare + public-paths policy live in SerenMeninges so every
+    # service enforces auth identically; empty token => mounts but no-ops.
+    app.add_middleware(bearer_auth_middleware(bearer))
 
     # -- Info routes --
     @app.get("/")

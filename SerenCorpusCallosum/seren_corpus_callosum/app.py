@@ -140,6 +140,7 @@ def create_app(config: CorpusCallosumConfig | None = None, transport=None) -> Fa
         # Public route (the HTML needs no auth); its API calls carry the token.
         html = render_from_dir(
             Path(__file__).parent / "viewer" / "ui",
+            title="SerenCorpusCallosum",
             brand=(
                 '<span class="bridge-mark"><span class="d l"></span>'
                 '<span class="bar"></span><span class="d r"></span></span>'

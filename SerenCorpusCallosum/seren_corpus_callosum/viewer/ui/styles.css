@@ -1,0 +1,354 @@
+:root {
+    --bg: #14141f;
+    --bg-2: #1a1a2e;
+    --panel: #1f2036;
+    --panel-2: #262844;
+    --line: #33365a;
+    --muted: #9aa0c8;
+    --faint: #6c7199;
+    /* --accent (violet) comes from the shell (render_from_dir accent=#9d7cff),
+       so it's NOT redefined here - the baseplate owns it. Body text is --text
+       and the base font is --font (both shell tokens), used directly below. */
+    --accent-dim: #4a3a86;
+    --coral: #f0726a;       /* SerenMemory - right brain */
+    --coral-dim: #7a3a36;
+    --cyan: #5bc8e8;        /* SerenLoci - left brain */
+    --cyan-dim: #2c6b80;
+    --gold: #f2c14e;        /* skipped-store note */
+    --good: #5fd0a0;
+    --bad: #ff8a8a;
+}
+
+/* Leaf flavor on top of the shell base. The shell owns the header, tabbar,
+   token modal, .view show/hide, and the design tokens; everything below is
+   callosum-specific content styling only. */
+
+/* the bridge mark: coral dot - violet bar - cyan dot, the two hemispheres this
+   service bridges, made literal. Lives in the header via the brand stud (the
+   route injects the markup; render_from_dir's brand accepts inline HTML), so
+   the leaf supplies its style here. */
+.bridge-mark { display: inline-flex; align-items: center; gap: 4px; margin-right: 6px; vertical-align: middle; }
+.bridge-mark .d { width: 8px; height: 8px; border-radius: 999px; }
+.bridge-mark .d.l { background: var(--coral); }
+.bridge-mark .d.r { background: var(--cyan); }
+.bridge-mark .bar { width: 16px; height: 3px; border-radius: 999px; background: var(--accent); }
+
+html {
+    background: radial-gradient(1200px 600px at 70% -10%, #221e3e 0%, var(--bg) 55%) no-repeat fixed;
+    background-color: var(--bg);
+}
+
+body {
+    font-size: 14px;
+}
+
+a {
+    text-decoration: none;
+}
+
+main {
+    padding: 20px 24px 60px;
+    max-width: 1100px;
+}
+
+/* search */
+.search-bar {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    align-items: center;
+    margin-bottom: 14px;
+}
+
+input, select {
+    background: var(--bg-2);
+    border: 1px solid var(--line);
+    color: var(--text);
+    border-radius: 8px;
+    padding: 9px 11px;
+    font-size: 13px;
+    font-family: var(--font);
+}
+
+    input:focus, select:focus {
+        outline: none;
+        border-color: var(--accent-dim);
+    }
+
+    input.q {
+        flex: 1;
+        min-width: 240px;
+        font-family: var(--mono);
+    }
+
+.btn {
+    background: var(--accent);
+    color: #160d2e;
+    border: none;
+    border-radius: 8px;
+    padding: 9px 16px;
+    font-weight: 600;
+    cursor: pointer;
+    font-size: 13px;
+}
+
+    .btn:hover {
+        filter: brightness(1.08);
+    }
+
+label.chk {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--muted);
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.served {
+    color: var(--faint);
+    font-family: var(--mono);
+    font-size: 12px;
+    margin: 4px 0 14px;
+}
+
+    .served .skip {
+        color: var(--gold);
+    }
+
+.stack {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.card {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 13px 15px;
+}
+
+/* search hits */
+.hit {
+    display: grid;
+    grid-template-columns: 72px 1fr;
+    gap: 14px;
+    align-items: start;
+}
+
+.score {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+    padding-top: 2px;
+}
+
+    .score .rank {
+        font-family: var(--mono);
+        font-size: 16px;
+        font-weight: 700;
+        color: var(--text);
+    }
+
+        .score .rank .h {
+            color: var(--faint);
+            font-weight: 400;
+            font-size: 12px;
+        }
+
+.badge {
+    font-family: var(--mono);
+    font-size: 10px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    border: 1px solid;
+    white-space: nowrap;
+}
+
+    .badge.coral { color: var(--coral); border-color: var(--coral-dim); }
+    .badge.cyan  { color: var(--cyan);  border-color: var(--cyan-dim); }
+    .badge.violet { color: var(--accent); border-color: var(--accent-dim); }
+
+.card .v {
+    margin: 0;
+    color: var(--text);
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.card .foot {
+    margin-top: 9px;
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+    font-size: 11px;
+    color: var(--faint);
+    font-family: var(--mono);
+}
+
+    .card .foot .id {
+        color: var(--faint);
+        opacity: .7;
+        word-break: break-all;
+    }
+
+/* stores */
+.store-card {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 10px;
+    align-items: center;
+}
+
+    .store-card .meta {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        min-width: 0;
+    }
+
+    .store-card .nm {
+        font-size: 15px;
+        font-weight: 600;
+        display: flex;
+        align-items: center;
+        gap: 9px;
+    }
+
+    .store-card .url {
+        font-family: var(--mono);
+        font-size: 12px;
+        color: var(--muted);
+        word-break: break-all;
+    }
+
+    .store-card .knobs {
+        font-family: var(--mono);
+        font-size: 11px;
+        color: var(--faint);
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+    }
+
+    .store-card .right {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+
+.status {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-family: var(--mono);
+    font-size: 12px;
+    white-space: nowrap;
+}
+
+    .status .dot {
+        width: 9px;
+        height: 9px;
+        border-radius: 999px;
+    }
+
+    .status.active .dot { background: var(--good); }
+    .status.active { color: var(--good); }
+    .status.disabled .dot { background: var(--faint); }
+    .status.disabled { color: var(--faint); }
+    .status.skipped .dot { background: var(--bad); }
+    .status.skipped { color: var(--bad); }
+
+/* the per-store remove button (shell `button` base + danger hover) */
+.del {
+    color: var(--faint);
+    padding: 5px 9px;
+}
+
+    .del:hover {
+        color: var(--bad);
+        border-color: var(--bad);
+    }
+
+.hint {
+    margin-top: 16px;
+    padding: 13px 15px;
+    border: 1px dashed var(--line);
+    border-radius: 10px;
+    color: var(--muted);
+    font-size: 12.5px;
+    background: rgba(157,124,255,.03);
+}
+
+    .hint b { color: var(--accent); font-weight: 600; }
+
+    .hint code {
+        font-family: var(--mono);
+        color: var(--text);
+        background: var(--panel-2);
+        padding: 1px 6px;
+        border-radius: 5px;
+    }
+
+/* overview */
+.stat-row {
+    display: flex;
+    gap: 14px;
+    flex-wrap: wrap;
+    margin-bottom: 20px;
+}
+
+.stat {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 16px 20px;
+    min-width: 130px;
+}
+
+    .stat .big {
+        font-size: 28px;
+        font-weight: 700;
+    }
+
+    .stat .lbl {
+        color: var(--faint);
+        font-size: 12px;
+        font-family: var(--mono);
+        margin-top: 2px;
+    }
+
+    .stat.accent .big {
+        color: var(--accent);
+    }
+
+.group-h {
+    color: var(--faint);
+    font-family: var(--mono);
+    font-size: 12px;
+    margin: 14px 0 8px;
+}
+
+.muted {
+    color: var(--muted);
+}
+
+.empty {
+    color: var(--faint);
+    padding: 30px 0;
+    text-align: center;
+    font-style: italic;
+}
+
+.err {
+    color: var(--bad);
+    background: rgba(255,80,80,.08);
+    border: 1px solid #5a2c2c;
+    border-radius: 8px;
+    padding: 10px 13px;
+    margin: 12px 0;
+    font-size: 13px;
+}

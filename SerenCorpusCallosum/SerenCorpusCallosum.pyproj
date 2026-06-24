@@ -27,6 +27,7 @@
     <Folder Include="seren_corpus_callosum\models\" />
     <Folder Include="seren_corpus_callosum\routes\" />
     <Folder Include="seren_corpus_callosum\viewer\" />
+    <Folder Include="seren_corpus_callosum\viewer\ui\" />
     <Folder Include="tests\" />
   </ItemGroup>
   <ItemGroup>
@@ -56,7 +57,14 @@
     <Compile Include="tests\test_stores.py" />
   </ItemGroup>
   <ItemGroup>
+    <Content Include="pyproject.toml" />
+    <Content Include="seren-corpus-callosum.service.sample" />
+    <Content Include="seren-corpus-callosum.yaml.sample" />
     <Content Include="seren_corpus_callosum\viewer\callosum.html" />
+    <Content Include="seren_corpus_callosum\viewer\ui\body.html" />
+    <Content Include="seren_corpus_callosum\viewer\ui\scripts.js" />
+    <Content Include="seren_corpus_callosum\viewer\ui\styles.css" />
+    <Content Include="seren_corpus_callosum\viewer\ui\tabs.html" />
   </ItemGroup>
   <Import Project="$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)\Python Tools\Microsoft.PythonTools.targets" />
   <!-- Uncomment the CoreCompile target to enable the Build command in

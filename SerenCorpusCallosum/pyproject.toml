@@ -28,13 +28,10 @@ dependencies = [
     "pyyaml>=6.0.2",
     "httpx>=0.27.0",
     # The shared Seren core: server/tls config blocks, token resolution, the
-    # version helper, the auth middleware, the viewer baseplate. The [keyring]
-    # extra is pulled so the store-add password box can write secrets to the OS
-    # keychain (Credential Manager / Keychain / Secret Service) where one
-    # exists; on a headless node with no backend it harmlessly degrades to the
-    # inline plaintext escape hatch. Pinned <1 - a MAJOR (an un-defaultable
-    # security change) is the only thing that ever forces a bump here.
-    "seren-meninges[keyring]>=0.0.1,<1",
+    # version helper, the auth middleware, the viewer baseplate. Pinned <1 - a
+    # MAJOR (an un-defaultable security change) is the only thing that ever
+    # forces a bump here.
+    "seren-meninges>=1.0.0,<2",
 ]
 
 [project.optional-dependencies]

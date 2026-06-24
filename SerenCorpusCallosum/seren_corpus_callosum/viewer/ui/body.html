@@ -1,0 +1,51 @@
+<div id="globalErr"></div>
+
+<!-- SEARCH -->
+<section class="view active" id="search">
+    <div class="search-bar">
+        <input class="q" id="searchQ" placeholder="ask the whole brain - fans every store, RRF-merges, ranks" />
+        <label class="chk">n_results <input type="number" id="nRes" value="10" min="1" max="50" style="width:62px; margin-left:6px;" /></label>
+        <button class="btn" id="searchBtn">Search</button>
+    </div>
+    <div class="served" id="served"></div>
+    <div class="stack" id="searchStack">
+        <div class="empty">One query fans every configured store, then merges by rank (RRF) - embedder-agnostic, so it's correct even across different embedders.</div>
+    </div>
+</section>
+
+<!-- STORES -->
+<section class="view" id="stores">
+    <div style="display:flex; align-items:center; gap:10px; margin-bottom:14px;">
+        <button class="btn" id="addToggle">+ Add store</button>
+        <span class="muted" style="font-size:12px;">fan a new SerenMemory- or SerenLoci-speaking endpoint</span>
+    </div>
+    <div id="addForm" style="display:none; margin-bottom:16px;">
+        <div class="search-bar">
+            <input id="addName" placeholder="name (e.g. project-xyz)" style="min-width:150px;" />
+            <select id="addType"></select>
+            <input id="addUrl" placeholder="http://host:port" style="min-width:190px;" />
+            <input id="addWeight" type="number" step="0.1" value="1.0" title="weight" style="width:74px;" />
+            <input id="addFloor" type="number" step="0.05" value="0.0" title="floor" style="width:74px;" />
+            <button class="btn" id="addSave">Add</button>
+            <button id="addCancel">Cancel</button>
+        </div>
+        <div class="muted" style="font-size:12px;">Saved to the runtime overlay - your <code style="font-family:var(--mono)">seren-corpus-callosum.yaml</code> stays untouched - and fanned on the next search.</div>
+    </div>
+    <div class="stack" id="storesStack"><div class="empty">Loading the federation…</div></div>
+    <div class="hint">
+        <b>Connecting?</b> Set the bearer token (🔑 top-right) if this callosum has auth on - saved in this browser, sent on every call.
+    </div>
+</section>
+
+<!-- OVERVIEW -->
+<section class="view" id="overview">
+    <div class="stat-row" id="stats"></div>
+    <h3 class="group-h">How the merge works</h3>
+    <p class="muted" style="max-width:640px; font-size:13px;">
+        The callosum reads only each store's <b>rank ordering</b> - never its raw scores - and fuses with
+        <b>Reciprocal Rank Fusion</b>: <code style="font-family:var(--mono)">weight / (k + rank)</code>. Because it ignores magnitudes,
+        the merge survives any store swapping its embedder. Per-store <b>weight</b> is the only cross-store trust lever;
+        per-store <b>floor</b> guards against rank-1-of-garbage. A slow or down store is skipped for that call - it degrades the
+        result, it never takes the fan down.
+    </p>
+</section>

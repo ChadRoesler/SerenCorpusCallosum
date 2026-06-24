@@ -26,7 +26,7 @@ from contextlib import asynccontextmanager, AsyncExitStack
 from pathlib import Path
 
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse
 
 from .config import CorpusCallosumConfig, load_config
 from .federation import Federation
@@ -35,14 +35,12 @@ from .routes import stores as stores_routes
 
 from seren_meninges import get_version
 from seren_meninges.auth import bearer_auth_middleware
-
-# The viewer HTML ships inside the package (package-data glob in pyproject).
-# Served at GET /viewer; 404s gracefully if it wasn't packaged.
-_VIEWER_PATH = Path(__file__).parent / "viewer" / "callosum.html"
+from seren_meninges.viewer import render_from_dir
 
 # Reported version via the shared helper: installed-wheel metadata, falling back
-# to a harmless placeholder for a source checkout. get_version never raises.
-APP_VERSION = get_version("seren-corpus-callosum", fallback="0+unknown")
+# to the package __version__ for a source checkout. get_version never raises.
+from . import __version__ as _fallback_version
+APP_VERSION = get_version("seren-corpus-callosum", fallback=_fallback_version)
 
 
 def create_app(config: CorpusCallosumConfig | None = None, transport=None) -> FastAPI:
@@ -137,12 +135,20 @@ def create_app(config: CorpusCallosumConfig | None = None, transport=None) -> Fa
 
     @app.get("/viewer")
     async def viewer():
-        # The Bridge - violet UI, hemisphere-colored results. Public route (the
-        # HTML itself needs no auth); its API calls carry the bearer token.
-        if _VIEWER_PATH.is_file():
-            return HTMLResponse(_VIEWER_PATH.read_text(encoding="utf-8"))
-        return JSONResponse(
-            {"error": "viewer not packaged with this install"}, status_code=404)
+        # The Bridge - violet UI, hemisphere-colored results. Snaps the leaf
+        # fragment files in viewer/ui/ onto the shared SerenMeninges baseplate.
+        # Public route (the HTML needs no auth); its API calls carry the token.
+        html = render_from_dir(
+            Path(__file__).parent / "viewer" / "ui",
+            brand=(
+                '<span class="bridge-mark"><span class="d l"></span>'
+                '<span class="bar"></span><span class="d r"></span></span>'
+                'Seren<b>CorpusCallosum</b> · The Bridge'
+            ),
+            subtitle=f"v{APP_VERSION} · one fan, every hall",
+            accent="#9d7cff",
+        )
+        return HTMLResponse(html)
 
     # -- The fan + introspection --
     app.include_router(search_routes.router)

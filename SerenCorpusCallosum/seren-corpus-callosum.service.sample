@@ -1,0 +1,32 @@
+# /etc/systemd/system/seren-corpus-callosum.service
+# Install:  sudo cp seren-corpus-callosum.service /etc/systemd/system/
+#           sudo systemctl daemon-reload
+#           sudo systemctl enable --now seren-corpus-callosum
+# Logs:     journalctl -u seren-corpus-callosum -f
+
+[Unit]
+Description=SerenCorpusCallosum — the callosum (RRF fan across Seren memory stores)
+# Come up after the network is really up — the fan makes outbound calls to the stores.
+After=network-online.target
+Wants=network-online.target
+# Don't hot-loop into oblivion if a dep keeps the start failing.
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+# Run as a real user, NOT root — so ~, the venv, and any keyring resolve to a real
+# profile (same reason the Windows NSSM wrapper runs as-user). Adjust to your box.
+User=caesar
+Group=caesar
+
+Environment=PYTHONUTF8=1
+Environment=SEREN_SCC_CONFIG=/home/caesar/.seren/seren-corpus-callosum.yaml
+ExecStart=/home/caesar/seren-venvs/callosum/bin/python -m seren_corpus_callosum
+
+WorkingDirectory=/home/caesar
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

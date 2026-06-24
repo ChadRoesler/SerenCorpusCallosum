@@ -29,6 +29,13 @@ from typing import Any, Optional
 
 from .overlay import load_overlay, overlay_path_for
 
+# The shared server/tls config blocks - ONE definition for the whole family.
+# SCC is dataclass-based, so (unlike pydantic Loci) it adopts these DIRECTLY:
+# its old local ServerConfig/TlsConfig were the same shape, so they ARE these
+# now. SCC gains the bearer-token pointers (env/keyring) + resolve_bearer free,
+# and stays pydantic-free (the engine import path stays light).
+from seren_meninges import ServerConfig, TlsConfig
+
 
 # Nano-floor defaults. Tunable, but these just-work on cheap hardware.
 _DEFAULT_K = 60                 # RRF damping constant (canonical)
@@ -146,43 +153,18 @@ class FederationConfig:
 # ════════════════════════════════════════════════════════════════════════
 
 
-@dataclass
-class ServerConfig:
-    """Same trusted-LAN posture as the rest of Seren."""
-
-    host: str = "0.0.0.0"
-    # Neighbor convention: memory 7420, margin 7421, loci 7422, callosum 7423.
-    port: int = 7423
-    bearer_token: str = ""   # empty = no auth (dev / trusted LAN)
-
-    @classmethod
-    def from_dict(cls, d: Optional[dict[str, Any]]) -> "ServerConfig":
-        d = d or {}
-        return cls(
-            host=str(d.get("host", "0.0.0.0")),
-            port=int(d.get("port", 7423)),
-            bearer_token=str(d.get("bearer_token", "")),
-        )
-
-
-@dataclass
-class TlsConfig:
-    """Corp-proxy escape hatch, mirrored from the family. Off by default;
-    opt-in via the [corp] extra + tls.trust_system_store: true."""
-
-    trust_system_store: bool = False
-
-    @classmethod
-    def from_dict(cls, d: Optional[dict[str, Any]]) -> "TlsConfig":
-        d = d or {}
-        return cls(trust_system_store=bool(d.get("trust_system_store", False)))
+# ServerConfig and TlsConfig are imported from SerenMeninges (top of file).
+# SCC's local copies were byte-identical dataclasses, so adopting the shared
+# ones is a pure delete - SCC gains the bearer-token POINTERS (env/keyring) and
+# resolve_bearer() for free, and a shared-shape fix lands here automatically.
+# Port stays leaf-owned: load_config passes default_port=7423 to from_dict.
 
 
 @dataclass
 class CorpusCallosumConfig:
     """The whole service: server + tls + the federation it fans across."""
 
-    server: ServerConfig = field(default_factory=ServerConfig)
+    server: ServerConfig = field(default_factory=lambda: ServerConfig(port=7423))
     tls: TlsConfig = field(default_factory=TlsConfig)
     federation: FederationConfig = field(default_factory=FederationConfig)
     # Where UI-added stores persist (the runtime overlay). Set by load_config;
@@ -201,6 +183,10 @@ def _apply_env_overrides(cfg: "CorpusCallosumConfig") -> "CorpusCallosumConfig":
         cfg.server.port = int(v)
     if v := env.get("SEREN_SCC_BEARER_TOKEN"):
         cfg.server.bearer_token = v
+    if v := env.get("SEREN_SCC_BEARER_TOKEN_ENV"):
+        cfg.server.bearer_token_env = v
+    if v := env.get("SEREN_SCC_BEARER_TOKEN_KEYRING"):
+        cfg.server.bearer_token_keyring = v
     if v := env.get("SEREN_SCC_TRUST_SYSTEM_STORE"):
         cfg.tls.trust_system_store = v.lower() in ("1", "true", "yes", "on")
     return cfg
@@ -241,7 +227,7 @@ def load_config(path: Optional[str] = None) -> "CorpusCallosumConfig":
         fed.stores.append(sc)
 
     cfg = CorpusCallosumConfig(
-        server=ServerConfig.from_dict(data.get("server")),
+        server=ServerConfig.from_dict(data.get("server"), default_port=7423),
         tls=TlsConfig.from_dict(data.get("tls")),
         federation=fed,
         runtime_stores_path=str(overlay_file),

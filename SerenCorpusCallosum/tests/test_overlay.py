@@ -12,6 +12,7 @@ from __future__ import annotations
 import os
 import sys
 import tempfile
+from pathlib import Path
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -58,7 +59,11 @@ def test_corrupt_overlay_degrades_to_empty():
 def test_overlay_path_env_override():
     os.environ["SEREN_SCC_RUNTIME_STORES"] = "/tmp/custom-overlay.json"
     try:
-        assert str(overlay_path_for("anywhere.yaml")) == "/tmp/custom-overlay.json"
+        # Path-to-Path compare so this is OS-agnostic: str(Path(...)) uses the
+        # platform separator (backslash on Windows), so a POSIX-string compare
+        # would spuriously fail off-Linux. "env override wins" is the behavior
+        # under test, and that's platform-independent.
+        assert overlay_path_for("anywhere.yaml") == Path("/tmp/custom-overlay.json")
     finally:
         del os.environ["SEREN_SCC_RUNTIME_STORES"]
     assert overlay_path_for("/etc/seren/seren-corpus-callosum.yaml").name == "runtime-stores.json"

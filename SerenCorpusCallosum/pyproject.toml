@@ -27,6 +27,11 @@ dependencies = [
     "pydantic>=2.9.0",
     "pyyaml>=6.0.2",
     "httpx>=0.27.0",
+    # The shared Seren core: server/tls config blocks, token resolution, the
+    # version helper, the auth middleware, the viewer baseplate. Pinned <1 - a
+    # MAJOR (an un-defaultable security change) is the only thing that ever
+    # forces a bump here.
+    "seren-meninges>=0.0.1,<1",
 ]
 
 [project.optional-dependencies]
@@ -62,11 +67,12 @@ seren-corpus-callosum = "seren_corpus_callosum.__main__:main"
 where = ["."]
 include = ["seren_corpus_callosum*"]
 
-# Ship a viewer HTML inside the wheel if/when one lands (a merged-recall
-# inspector is the natural one). Harmless before it exists - the glob just
-# matches nothing. Same pip-strips-non-.py gotcha as the family.
+# Ship the viewer fragment files inside the wheel: the leaf bricks in
+# viewer/ui/ that render_from_dir snaps onto the SerenMeninges baseplate. Same
+# pip-strips-non-.py gotcha as the family - without this, GET /viewer renders an
+# empty shell on an installed copy.
 [tool.setuptools.package-data]
-seren_corpus_callosum = ["viewer/*.html"]
+seren_corpus_callosum = ["viewer/ui/*.html", "viewer/ui/*.css", "viewer/ui/*.js"]
 
 [tool.setuptools_scm]
 # .git is one level above this pyproject (outer repo root, not the inner

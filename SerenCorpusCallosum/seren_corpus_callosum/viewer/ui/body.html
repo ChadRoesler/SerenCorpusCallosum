@@ -26,10 +26,11 @@
             <input id="addUrl" placeholder="http://host:port" style="min-width:190px;" />
             <input id="addWeight" type="number" step="0.1" value="1.0" title="weight" style="width:74px;" />
             <input id="addFloor" type="number" step="0.05" value="0.0" title="floor" style="width:74px;" />
+            <input id="addToken" type="password" placeholder="bearer token (optional)" title="the token this store requires, if any" style="min-width:170px;" />
             <button class="btn" id="addSave">Add</button>
             <button id="addCancel">Cancel</button>
         </div>
-        <div class="muted" style="font-size:12px;">Saved to the runtime overlay - your <code style="font-family:var(--mono)">seren-corpus-callosum.yaml</code> stays untouched - and fanned on the next search.</div>
+        <div class="muted" style="font-size:12px;">Saved to the runtime overlay - your <code style="font-family:var(--mono)">seren-corpus-callosum.yaml</code> stays untouched - and fanned on the next search. A token goes to the OS keychain where one exists, else inline in the overlay (trusted-LAN).</div>
     </div>
     <div class="stack" id="storesStack"><div class="empty">Loading the federation…</div></div>
     <div class="hint">

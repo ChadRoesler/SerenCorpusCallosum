@@ -37,7 +37,7 @@ class FakeTransport:
     def __init__(self, by_url: dict):
         self.by_url = by_url
 
-    async def post_json(self, url: str, payload: dict) -> dict:
+    async def post_json(self, url: str, payload: dict, headers: dict = None) -> dict:
         v = self.by_url.get(url)
         if v is None:
             raise RuntimeError(f"no canned response for {url}")

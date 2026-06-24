@@ -33,7 +33,7 @@ class FakeTransport:
         self.by_url = by_url
         self.calls: list[tuple[str, dict]] = []
 
-    async def post_json(self, url: str, payload: dict) -> dict:
+    async def post_json(self, url: str, payload: dict, headers: dict = None) -> dict:
         self.calls.append((url, payload))
         val = self.by_url[url]
         if isinstance(val, Exception):

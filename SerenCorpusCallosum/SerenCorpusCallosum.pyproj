@@ -62,6 +62,7 @@
     <Content Include="seren-corpus-callosum.service.sample" />
     <Content Include="seren-corpus-callosum.yaml.sample" />
     <Content Include="seren_corpus_callosum\viewer\ui\body.html" />
+    <Content Include="seren_corpus_callosum\viewer\ui\header_aside.html" />
     <Content Include="seren_corpus_callosum\viewer\ui\scripts.js" />
     <Content Include="seren_corpus_callosum\viewer\ui\styles.css" />
     <Content Include="seren_corpus_callosum\viewer\ui\tabs.html" />

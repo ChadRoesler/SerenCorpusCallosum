@@ -24,7 +24,7 @@ TRANSPORT IS INJECTED:
 """
 from __future__ import annotations
 
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Optional, Protocol, runtime_checkable
 
 from .config import StoreConfig
 from .fusion import Hit, base_relevance_from_distance
@@ -34,7 +34,8 @@ from .fusion import Hit, base_relevance_from_distance
 class Transport(Protocol):
     """Minimal async HTTP seam. Real impl in transport.py; fakes in tests."""
 
-    async def post_json(self, url: str, payload: dict[str, Any]) -> dict[str, Any]:
+    async def post_json(self, url: str, payload: dict[str, Any],
+                        headers: Optional[dict[str, str]] = None) -> dict[str, Any]:
         ...
 
 
@@ -62,6 +63,12 @@ class _BaseAdapter:
         self.name = cfg.name
         self.weight = cfg.weight
         self.floor = cfg.floor
+        # Resolve this store's OUTBOUND bearer ONCE (the resolver may hit the OS
+        # keychain - too slow to do per search). "" -> open store -> no header.
+        # Same shared resolver the services use inbound, pointed outbound here.
+        _tok = cfg.resolve_token()
+        self._auth_headers: Optional[dict[str, str]] = (
+            {"Authorization": f"Bearer {_tok}"} if _tok else None)
 
     @property
     def _search_url(self) -> str:
@@ -96,7 +103,7 @@ class SerenMemoryAdapter(_BaseAdapter):
             "include_long": bool(opts.get("include_long", True)),
             "include_superseded": bool(opts.get("include_superseded", False)),
         }
-        resp = await self._transport.post_json(self._search_url, payload)
+        resp = await self._transport.post_json(self._search_url, payload, headers=self._auth_headers)
         hits: list[Hit] = []
         for raw in (resp.get("hits") or []):
             try:
@@ -156,7 +163,7 @@ class SerenLociAdapter(_BaseAdapter):
         if opts.get("project") is not None:
             payload["project"] = opts["project"]
 
-        resp = await self._transport.post_json(self._search_url, payload)
+        resp = await self._transport.post_json(self._search_url, payload, headers=self._auth_headers)
         hits: list[Hit] = []
         for raw in (resp.get("hits") or []):
             score = _as_float_or_none(raw.get("score"))

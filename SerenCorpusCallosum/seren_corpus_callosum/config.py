@@ -58,6 +58,26 @@ class StoreConfig:
     enabled: bool = True             # flip off without deleting the entry
     managed: bool = False            # True = added via the UI (lives in the runtime overlay, removable from the UI)
     options: dict[str, Any] = field(default_factory=dict)  # adapter-specific extras (e.g. loci project scope)
+    # per-store OUTBOUND auth: the bearer SCC presents to THIS store when it
+    # fans. Same pointer pattern as ServerConfig (inline / env / keyring),
+    # resolved by the shared meninges resolver - inbound/outbound symmetry.
+    # "" everywhere = the store is open. The UI add-store flow writes either
+    # token_keyring (secret in the OS keychain) or, on a node with no keychain,
+    # token (inline plaintext escape hatch); hand-authored yaml can use any.
+    token: str = ""              # inline literal (plaintext - no-keychain nodes)
+    token_env: str = ""          # NAME of an env var holding the token
+    token_keyring: str = ""      # "service/username" into the OS keychain (secure default)
+
+    def resolve_token(self) -> str:
+        """The bearer this store wants presented, or "" if it's open. Uses the
+        shared meninges resolver - the SAME call the services use inbound, here
+        pointed outbound (the use the resolver was explicitly built for)."""
+        from seren_meninges import resolve_token as _resolve
+        return _resolve(
+            inline=self.token or None,
+            keyring_ref=self.token_keyring or None,
+            env_var=self.token_env or None,
+        )
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> "StoreConfig":
@@ -65,7 +85,8 @@ class StoreConfig:
         # else falls back to a Nano-floor default. We don't raise on extra
         # keys - open schema - we stash unknowns in options so adapters can
         # read them and we never lose operator intent.
-        known = {"name", "type", "url", "weight", "floor", "enabled", "managed", "options"}
+        known = {"name", "type", "url", "weight", "floor", "enabled", "managed", "options",
+                 "token", "token_env", "token_keyring"}
         extras = {k: v for k, v in d.items() if k not in known}
         opts = dict(d.get("options") or {})
         opts.update(extras)
@@ -78,6 +99,9 @@ class StoreConfig:
             enabled=bool(d.get("enabled", True)),
             managed=bool(d.get("managed", False)),
             options=opts,
+            token=str(d.get("token", "") or ""),
+            token_env=str(d.get("token_env", "") or ""),
+            token_keyring=str(d.get("token_keyring", "") or ""),
         )
 
 

@@ -47,14 +47,17 @@ class HttpTransport:
             await self._client.aclose()
             self._client = None
 
-    async def post_json(self, url: str, payload: dict[str, Any]) -> dict[str, Any]:
+    async def post_json(self, url: str, payload: dict[str, Any],
+                        headers: Optional[dict[str, str]] = None) -> dict[str, Any]:
         # Lazy client so the transport also works without the context-manager
         # form (one-shot client per call - fine for low-traffic homelab use).
+        # headers carries the per-store Authorization bearer when the store has
+        # auth on (resolved once by the adapter); None for an open store.
         if self._client is None:
             async with self._httpx.AsyncClient(timeout=self._timeout) as client:
-                resp = await client.post(url, json=payload)
+                resp = await client.post(url, json=payload, headers=headers)
                 resp.raise_for_status()
                 return resp.json()
-        resp = await self._client.post(url, json=payload)
+        resp = await self._client.post(url, json=payload, headers=headers)
         resp.raise_for_status()
         return resp.json()

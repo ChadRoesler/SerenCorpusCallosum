@@ -12,6 +12,7 @@
     <OutputPath>.</OutputPath>
     <Name>SerenCorpusCallosum</Name>
     <RootNamespace>SerenCorpusCallosum</RootNamespace>
+    <TestFramework>Pytest</TestFramework>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)' == 'Debug' ">
     <DebugSymbols>true</DebugSymbols>

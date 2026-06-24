@@ -1,0 +1,51 @@
+# seren-corpus-callosum.yaml
+# SerenCorpusCallosum — the callosum. A read-only RRF fan across N memory stores.
+# Resolution: built-in defaults -> this file -> SEREN_SCC_* env (later wins).
+# Every key is optional; a missing file just means "fan across no stores yet."
+
+server:
+  host: 0.0.0.0          # 0.0.0.0 = reachable on the LAN; 127.0.0.1 = local-only
+  port: 7423             # family convention: memory 7420, margin 7421, loci 7422, callosum 7423
+
+  # --- auth (optional) — empty across all three = no auth (trusted-LAN default) ---
+  # Config holds a POINTER to the secret, not the secret. Precedence: inline > keyring > env.
+  # bearer_token: ""                          # inline literal — escape hatch / quick tests only
+  # bearer_token_env: SEREN_SCC_TOKEN         # NAME of an env var holding the token (recommended)
+  # bearer_token_keyring: "seren-scc/bearer"  # "service/username" in the OS keychain (needs meninges[keyring])
+
+tls:
+  trust_system_store: false   # opt-in for a corp/intercepting proxy on the OUTBOUND fan calls
+                              # (needs: pip install 'seren-corpus-callosum[corp]')
+
+federation:
+  # RRF merge knobs — defaults are canonical / Nano-floor; rarely need touching.
+  k: 60                     # RRF damping constant
+  n_results: 10             # merged hits returned by default
+  fetch_multiplier: 2       # over-fetch per store so the merge has candidates to rank
+  per_store_timeout_s: 5.0  # a slow store degrades the result, never blocks the fan
+
+  # The stores to fan across. Adding one is just an entry here — no code.
+  # type is the adapter key: "seren_loci" (left brain) | "seren_memory" (right brain).
+  stores:
+    - name: loci            # unique label — provenance + tie-break key
+      type: seren_loci
+      url: http://localhost:7422
+      weight: 1.0           # RRF trust multiplier (equal until told otherwise)
+      floor: 0.0            # per-store relevance floor pre-fusion (raise toward ~0.3 if a store is noisy)
+      # enabled: true       # flip off without deleting the entry
+      # options: {}         # adapter-specific extras (e.g. a loci project scope)
+
+    - name: memory
+      type: seren_memory
+      url: http://localhost:7420
+      weight: 1.0
+      floor: 0.0
+
+    # The gift, in config form — spin up a dedicated memory for a project and fan it in,
+    # same adapter, zero new code:
+    # - name: rhys
+    #   type: seren_memory
+    #   url: http://localhost:7430
+
+# Note: stores you add from the web UI don't land here — they go to a sibling
+# runtime-stores.json (machine-managed) so this hand-authored file stays pristine.

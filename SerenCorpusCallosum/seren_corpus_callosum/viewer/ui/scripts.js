@@ -82,12 +82,16 @@ async function addStore() {
     const url = document.getElementById("addUrl").value.trim();
     const weight = parseFloat(document.getElementById("addWeight").value || "1.0");
     const floor = parseFloat(document.getElementById("addFloor").value || "0.0");
+    const token = document.getElementById("addToken").value.trim();
     if (!name || !url) { showErr("name and url are required"); return; }
+    const payload = { name, type, url, weight, floor };
+    if (token) payload.token = token;   // omit when blank -> the store is open
     try {
-        await api("/stores", { method: "POST", body: JSON.stringify({ name, type, url, weight, floor }) });
+        await api("/stores", { method: "POST", body: JSON.stringify(payload) });
         document.getElementById("addForm").style.display = "none";
         document.getElementById("addName").value = "";
         document.getElementById("addUrl").value = "";
+        document.getElementById("addToken").value = "";   // never leave the secret in the field
         clearErr(); loadStores();
     } catch (e) { showErr(e.message); }
 }
@@ -108,7 +112,7 @@ function renderStores(data) {
         const del = s.managed ? `<button class="del" data-del="${escapeHtml(s.name)}" title="Remove from the fan">✕</button>` : "";
         return `<div class="card"><div class="store-card">
           <div class="meta">
-            <div class="nm"><span class="badge ${cls}">${escapeHtml(s.type)}</span>${escapeHtml(s.name)}</div>
+            <div class="nm"><span class="badge ${cls}">${escapeHtml(s.type)}</span>${escapeHtml(s.name)}${s.auth ? ` <span title="this store requires a bearer token" style="font-size:11px;opacity:.75;margin-left:2px;">🔒</span>` : ""}</div>
             <div class="url">${escapeHtml(s.url)}</div>
             <div class="knobs"><span>weight ${s.weight}</span><span>floor ${s.floor}</span></div>
           </div>

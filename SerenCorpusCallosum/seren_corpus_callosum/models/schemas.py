@@ -31,6 +31,11 @@ class StoreCreate(BaseModel):
     url: str
     weight: float = 1.0
     floor: float = 0.0
+    # Optional bearer the store requires (the password-box value). The handler
+    # routes it to the OS keychain when one exists (overlay keeps only a
+    # token_keyring POINTER), or inline in the overlay as a plaintext escape
+    # hatch on a node with no keychain. Never echoed back by GET /stores.
+    token: Optional[str] = None
 
 
 class FusedHitOut(BaseModel):

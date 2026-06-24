@@ -26,7 +26,7 @@ from seren_corpus_callosum.overlay import load_overlay  # noqa: E402
 
 
 class FakeTransport:
-    async def post_json(self, url, payload):
+    async def post_json(self, url, payload, headers=None):
         return {"hits": []}
 
 

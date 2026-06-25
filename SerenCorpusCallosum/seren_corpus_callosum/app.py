@@ -36,6 +36,7 @@ from .routes import stores as stores_routes
 from seren_meninges import get_version
 from seren_meninges.auth import bearer_auth_middleware
 from seren_meninges.viewer import render_from_dir
+from seren_sinew.request_log import RequestLoggingMiddleware
 
 # Reported version via the shared helper: installed-wheel metadata, falling back
 # to the package __version__ for a source checkout. get_version never raises.
@@ -117,6 +118,17 @@ def create_app(config: CorpusCallosumConfig | None = None, transport=None) -> Fa
     # constant-time compare + public-paths policy live in SerenMeninges so every
     # service enforces auth identically; empty token => mounts but no-ops.
     app.add_middleware(bearer_auth_middleware(bearer))
+
+    # -- Request logging (shared, Sinew) --
+    # Added AFTER auth so it sits OUTERMOST (Starlette mounts LIFO): every
+    # request is logged including auth-rejected 401s, to stderr + the rotating
+    # ~/seren-logs/corpus-callosum-requests.log. env_prefix=SEREN_SCC namespaces
+    # the knobs (SEREN_SCC_LOG_LEVEL / _LOG_QUERY).
+    app.add_middleware(
+        RequestLoggingMiddleware,
+        service_name="seren-corpus-callosum",
+        env_prefix="SEREN_SCC",
+    )
 
     # -- Info routes --
     @app.get("/")

@@ -32,6 +32,9 @@ dependencies = [
     # MAJOR (an un-defaultable security change) is the only thing that ever
     # forces a bump here.
     "seren-meninges>=1.0.0,<2",
+    # Shared request logging - one copy across the family (SerenSinew). Mounted
+    # outermost (before auth) so even 401s get logged. -> corpus-callosum-requests.log.
+    "seren-sinew>=1.0.0,<2",
 ]
 
 [project.optional-dependencies]

@@ -141,7 +141,7 @@ def create_app(config: CorpusCallosumConfig | None = None, transport=None) -> Fa
         html = render_from_dir(
             Path(__file__).parent / "viewer" / "ui",
             title="SerenCorpusCallosum",
-            brand='Seren<b>CorpusCallosum</b> · The Bridge'
+            brand='Seren<b>CorpusCallosum</b> · The Bridge',
             subtitle=f"v{APP_VERSION} · one fan, every hall",
             accent="#9d7cff",
         )

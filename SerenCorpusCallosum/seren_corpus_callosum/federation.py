@@ -92,7 +92,14 @@ class Federation:
             ranked_lists[name] = apply_floor(hits, bound.floor)
             weights[name] = bound.weight
 
-        return rrf_fuse(ranked_lists, k=self._config.k, weights=weights, n_results=n)
+        return rrf_fuse(
+            ranked_lists,
+            k=self._config.k,
+            weights=weights,
+            n_results=n,
+            fusion_mode=self._config.fusion_mode,
+            authority_margin=self._config.authority_margin,
+        )
 
     async def _safe_search(self, bound: _BoundStore, query: str, n: int) -> tuple[str, list[Hit]]:
         """Call one store with a timeout; ANY failure -> empty list. This is

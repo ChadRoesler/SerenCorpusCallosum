@@ -113,12 +113,71 @@ def apply_floor(hits: list[Hit], min_base_relevance: float) -> list[Hit]:
     return [h for h in hits if h.base_relevance >= min_base_relevance]
 
 
+def _store_margin(hits: list[Hit]) -> Optional[float]:
+    """A store's INTRA-store confidence: top hit's base_relevance minus its
+    runner-up's, in the store's OWN embedder space (a within-store comparison,
+    which IS meaningful - see apply_floor). Captures the SHAPE of the answer: a
+    wide gap = 'I have a clear winner', a flat gap = 'I'm guessing'. That shape
+    survives an embedder swap far better than raw magnitude, which is why
+    comparing margins across stores is a defensible confidence signal even
+    though comparing raw distances across stores is not. None if < 2 hits."""
+    if len(hits) < 2:
+        return None
+    return hits[0].base_relevance - hits[1].base_relevance
+
+
+def _most_confident_store(ranked_lists: dict[str, list[Hit]],
+                          threshold: float) -> Optional[str]:
+    """N-store generalization of the authority rule. Across ALL stores, the one
+    whose intra-store margin is largest AND clears `threshold`. No store name is
+    hardcoded - 'the authoritative store usually wins' is an OUTCOME of it being
+    the most internally confident, not a privilege. Deterministic on margin ties
+    (first in iteration order == configured store order)."""
+    best_store: Optional[str] = None
+    best_margin: Optional[float] = None
+    for store, hits in ranked_lists.items():
+        m = _store_margin(hits)
+        if m is not None and m >= threshold and (best_margin is None or m > best_margin):
+            best_store, best_margin = store, m
+    return best_store
+
+
+def _apply_authority(fused: list[FusedHit], ranked_lists: dict[str, list[Hit]],
+                     threshold: float) -> list[FusedHit]:
+    """Promote the most-confident store's top hit to fused rank 1, if any store
+    clears the margin. Pure list surgery on the already-fused order - the merge
+    math is untouched.
+
+    Why an explicit promotion rather than a fusion weight: a confident
+    authoritative fact and a genuinely relevant episode legitimately tie at each
+    store's rank 1, and rank-only RRF then breaks that tie on store-iteration
+    order - demoting the fact for a reason that has nothing to do with the
+    answer. This restores the correct policy: when a store is clearly confident
+    in its top answer, that answer LEADS the packet; the relevant context still
+    rides right behind it.
+
+    This is the ONE place fusion consults base_relevance for ORDERING, and only
+    as an INTRA-store confidence signal (via _store_margin), never as a cross-
+    store magnitude comparison - so the merge's embedder-immunity is preserved."""
+    cs = _most_confident_store(ranked_lists, threshold)
+    if cs is None or not ranked_lists.get(cs):
+        return fused
+    top = ranked_lists[cs][0]
+    idx = next((i for i, f in enumerate(fused)
+                if f.hit.store == cs and f.hit.id == top.id), None)
+    if idx is None or idx == 0:
+        return fused
+    return [fused[idx]] + fused[:idx] + fused[idx + 1:]
+
+
 def rrf_fuse(
     ranked_lists: dict[str, list[Hit]],
     *,
     k: int = 60,
     weights: Optional[dict[str, float]] = None,
     n_results: Optional[int] = None,
+    fusion_mode: str = "rrf",
+    authority_margin: float = 0.0,
 ) -> list[FusedHit]:
     """Interleave independent stores' ranked lists by Reciprocal Rank Fusion.
 
@@ -146,19 +205,45 @@ def rrf_fuse(
         magnitude-incomparability RRF exists to avoid.
     """
     weights = weights or {}
-    fused: list[FusedHit] = []
+
+    # Intra-store percentile (common currency) for the N-store modes: a store's
+    # rank-1 of n -> 100, rank-n -> 100/n. Lets stores rank against each other by
+    # POSITION, never by magnitudes that don't survive an embedder swap. Computed
+    # once; only consulted by 'percentile' / 'rrf_pct'.
+    pctl: dict[tuple[str, str], float] = {}
+    for store, hits in ranked_lists.items():
+        n = len(hits)
+        for idx, hit in enumerate(hits):
+            pctl[(store, hit.id)] = ((n - idx) / n) * 100.0 if n else 0.0
 
     # Build in (store-iteration-order, rank-ascending) order. Python's sort is
-    # stable, so equal rrf_scores will retain exactly this order - that's our
-    # deterministic, magnitude-free tie-break.
+    # stable, so equal scores retain exactly this order - the deterministic,
+    # magnitude-free tie-break. (fusion_mode='rrf' + authority_margin<=0 is
+    # byte-identical to the original rank-only RRF.)
+    fused: list[FusedHit] = []
     for store, hits in ranked_lists.items():
         w = weights.get(store, 1.0)
         for idx, hit in enumerate(hits):
             rank = idx + 1                       # list position IS the store's ranking
-            score = w / (k + rank)
+            if fusion_mode == "percentile":
+                score = w * pctl[(store, hit.id)]      # common currency: 100 == every store's best
+            else:                                       # 'rrf' and 'rrf_pct' both score on rank
+                score = w / (k + rank)
             fused.append(FusedHit(hit=hit, rrf_score=score, store_rank=rank))
 
-    fused.sort(key=lambda f: f.rrf_score, reverse=True)
+    # 'rrf_pct' keeps RRF's rank score but breaks ties on percentile instead of
+    # store-iteration order (minimal surgery, still embedder-agnostic). Other
+    # modes use the stable sort, preserving store-iteration-then-rank exactly.
+    if fusion_mode == "rrf_pct":
+        fused.sort(key=lambda f: (f.rrf_score, pctl[(f.hit.store, f.hit.id)]), reverse=True)
+    else:
+        fused.sort(key=lambda f: f.rrf_score, reverse=True)
+
+    # Most-confident-store-wins authority: promote the clearly-confident store's
+    # top hit to fused rank 1 BEFORE trimming, so the authoritative answer leads
+    # the packet even if rank-only fusion buried it. Disabled at margin <= 0.
+    if authority_margin > 0:
+        fused = _apply_authority(fused, ranked_lists, authority_margin)
 
     if n_results is not None:
         fused = fused[:n_results]

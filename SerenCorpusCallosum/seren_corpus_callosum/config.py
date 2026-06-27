@@ -44,6 +44,8 @@ _DEFAULT_FETCH_MULTIPLIER = 2   # over-fetch per store so the merge has candidat
 _DEFAULT_TIMEOUT_S = 5.0        # per-store call timeout - a slow store degrades, never blocks
 _DEFAULT_WEIGHT = 1.0           # equal cross-store trust until told otherwise
 _DEFAULT_FLOOR = 0.0            # 0 = trust the store's own ordering; raise to ~0.3 if noisy
+_DEFAULT_FUSION_MODE = "rrf"    # rank-only RRF; "rrf_pct" / "percentile" are the N-store common-currency modes
+_DEFAULT_AUTHORITY_MARGIN = 0.035  # confident-store -> promote-to-rank-1 threshold; 0 disables. Embedder-dependent: tune via brain_eval.
 
 
 @dataclass
@@ -114,6 +116,12 @@ class FederationConfig:
     n_results: int = _DEFAULT_N_RESULTS
     fetch_multiplier: int = _DEFAULT_FETCH_MULTIPLIER
     per_store_timeout_s: float = _DEFAULT_TIMEOUT_S
+    # How the merge ranks across stores, and whether a clearly-confident store's
+    # top hit is promoted to lead. fusion_mode stays 'rrf' (rank-only, embedder-
+    # agnostic) by default; 'percentile'/'rrf_pct' are the N-store common-currency
+    # modes. authority_margin>0 turns on most-confident-store-wins promotion.
+    fusion_mode: str = _DEFAULT_FUSION_MODE
+    authority_margin: float = _DEFAULT_AUTHORITY_MARGIN
 
     @property
     def enabled_stores(self) -> list[StoreConfig]:
@@ -149,6 +157,8 @@ class FederationConfig:
             n_results=int(d.get("n_results", _DEFAULT_N_RESULTS)),
             fetch_multiplier=int(d.get("fetch_multiplier", _DEFAULT_FETCH_MULTIPLIER)),
             per_store_timeout_s=float(d.get("per_store_timeout_s", _DEFAULT_TIMEOUT_S)),
+            fusion_mode=str(d.get("fusion_mode", _DEFAULT_FUSION_MODE)),
+            authority_margin=float(d.get("authority_margin", _DEFAULT_AUTHORITY_MARGIN)),
         )
 
     @classmethod

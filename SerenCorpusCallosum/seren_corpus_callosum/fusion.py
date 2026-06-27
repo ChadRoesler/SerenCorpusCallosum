@@ -158,14 +158,24 @@ def _apply_authority(fused: list[FusedHit], ranked_lists: dict[str, list[Hit]],
 
     This is the ONE place fusion consults base_relevance for ORDERING, and only
     as an INTRA-store confidence signal (via _store_margin), never as a cross-
-    store magnitude comparison - so the merge's embedder-immunity is preserved."""
+    store magnitude comparison - so the merge's embedder-immunity is preserved.
+
+    Respects WEIGHT: authority only breaks the tie FOR THE LEAD. If a higher-
+    weighted hit strictly outscores the confident store's top, that deliberate
+    weight wins - authority resolves the arbitrary store-iteration tie among
+    co-leaders, it never overrides a weight gap an operator chose."""
     cs = _most_confident_store(ranked_lists, threshold)
-    if cs is None or not ranked_lists.get(cs):
+    if cs is None or not ranked_lists.get(cs) or not fused:
         return fused
     top = ranked_lists[cs][0]
     idx = next((i for i, f in enumerate(fused)
                 if f.hit.store == cs and f.hit.id == top.id), None)
     if idx is None or idx == 0:
+        return fused
+    # Weight sets the pecking order; authority only breaks the tie FOR THE LEAD.
+    # If something strictly outscores the confident store's top (a deliberate
+    # weight gap), defer to it - don't override the operator's trust.
+    if fused[idx].rrf_score < fused[0].rrf_score - 1e-9:
         return fused
     return [fused[idx]] + fused[:idx] + fused[idx + 1:]
 

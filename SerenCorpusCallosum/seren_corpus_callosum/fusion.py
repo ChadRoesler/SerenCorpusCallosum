@@ -50,6 +50,19 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 
+# The fusion modes the engine actually implements. Single source of truth: the
+# config layer validates an operator's `fusion_mode` against THIS set and warns
+# on a typo, instead of silently degrading. rrf_fuse also normalizes an unknown
+# mode to "rrf" defensively, so a bad value has ONE defined behavior (rank-only)
+# whether it arrives via config or a direct call - never a silent surprise.
+_VALID_FUSION_MODES = frozenset({"rrf", "rrf_pct", "percentile"})
+
+# A top hit at/above this base_relevance is treated as a perfect match (Loci's
+# exact-key hit returns score 1.0; a zero-distance vector hit also lands here).
+# Such a hit is maximally authoritative ON ITS OWN MERIT - see _store_margin.
+_EXACT_MATCH_BASE = 0.999
+
+
 @dataclass
 class Hit:
     """One normalized result from a single store, after its adapter has
@@ -114,16 +127,39 @@ def apply_floor(hits: list[Hit], min_base_relevance: float) -> list[Hit]:
 
 
 def _store_margin(hits: list[Hit]) -> Optional[float]:
-    """A store's INTRA-store confidence: top hit's base_relevance minus its
-    runner-up's, in the store's OWN embedder space (a within-store comparison,
-    which IS meaningful - see apply_floor). Captures the SHAPE of the answer: a
-    wide gap = 'I have a clear winner', a flat gap = 'I'm guessing'. That shape
-    survives an embedder swap far better than raw magnitude, which is why
-    comparing margins across stores is a defensible confidence signal even
-    though comparing raw distances across stores is not. None if < 2 hits."""
-    if len(hits) < 2:
+    """A store's INTRA-store confidence: how much its top hit stands out, in the
+    store's OWN embedder space (a within-store comparison, which IS meaningful -
+    see apply_floor). That SHAPE survives an embedder swap far better than raw
+    magnitude, which is why comparing margins across stores is a defensible
+    confidence signal even though comparing raw distances across stores is not.
+
+    Two regimes:
+
+    1. PERFECT TOP (base_relevance >= _EXACT_MATCH_BASE). The keystone case.
+       Loci's exact-key hit returns score 1.0 - "here's EXACTLY how it's called",
+       the precise invocation, the single most certain signal the whole system
+       can produce. That certainty is intrinsic, not relative: it stands on its
+       own merit whether or not a runner-up exists. So its confidence is its own
+       base_relevance (~1.0), the maximum. This is what lets a LONE exact-key
+       hit lead - previously a one-hit store had no runner-up to form a gap and
+       so could never be authoritative, which buried the most authoritative
+       answer there is. It also lets an exact-key hit out-confidence a merely
+       wide-gap vector store ("how it's called" beats "I'm fairly sure about
+       this episode"), which is the correct precedence.
+
+    2. ORDINARY TOP. Confidence is the gap to the runner-up: a wide gap = clear
+       winner, a flat gap = guessing. A LONE non-perfect hit has no runner-up
+       and isn't authoritative - it's just sparse - so it abstains (None) and
+       plain RRF stands.
+    """
+    if not hits:
         return None
-    return hits[0].base_relevance - hits[1].base_relevance
+    top = hits[0].base_relevance
+    if top >= _EXACT_MATCH_BASE:
+        return top                      # perfect match: maximally confident on its own merit
+    if len(hits) < 2:
+        return None                     # lone non-perfect hit: sparse, not confident -> abstain
+    return top - hits[1].base_relevance
 
 
 def _most_confident_store(ranked_lists: dict[str, list[Hit]],
@@ -180,6 +216,52 @@ def _apply_authority(fused: list[FusedHit], ranked_lists: dict[str, list[Hit]],
     return [fused[idx]] + fused[:idx] + fused[idx + 1:]
 
 
+def _trim_with_quota(fused: list[FusedHit], n_results: int,
+                     min_per_store: int) -> list[FusedHit]:
+    """Trim to n_results while GUARANTEEING each store that contributed keeps at
+    least `min_per_store` of its top hits in the packet - the diversity rule that
+    makes the docket a *briefing* (a fact AND a scar), not just a ranked list.
+
+    Why this exists: rank-only RRF already interleaves equal-weight stores, so
+    two co-equal stores both appear near the top - for THAT case this is a no-op
+    (and correctly so; it must not meddle when RRF already balanced). It earns
+    its keep when a store is WEIGHTED DOWN (its rank-1 can fall below the heavier
+    store's deep ranks and drop off even at a generous n) or when 3+ stores
+    compete for scarce slots. There, naive top-n can return an all-one-class
+    packet; the quota reserves a seat so the missing class is still present.
+
+    The contract, stated honestly: if n_results >= (contributing stores) *
+    min_per_store, every contributing store is represented. If you ask for FEWER
+    results than there are stores, representation is best-effort in fused-rank
+    order - you can't seat everyone at a table with too few chairs.
+
+    Order is preserved: selections are emitted in the original fused order, so
+    the authority lead still leads and a guaranteed-but-weak hit rides at the
+    tail (present, but honestly ranked). The floor still upstream-decides 'worth
+    showing at all'; the quota only decides 'given it cleared the floor, its
+    class gets a seat'. min_per_store <= 0 disables (pure top-n trim)."""
+    if min_per_store <= 0 or len(fused) <= n_results:
+        return fused[:n_results]
+    chosen: set[int] = set()
+    reserved: dict[str, int] = {}
+    # Reserve phase: walk the fused order, granting each store up to
+    # min_per_store of its highest-fused-rank hits, until the packet is full.
+    for i, f in enumerate(fused):
+        if len(chosen) >= n_results:
+            break
+        c = reserved.get(f.hit.store, 0)
+        if c < min_per_store:
+            chosen.add(i)
+            reserved[f.hit.store] = c + 1
+    # Fill phase: any remaining slots go to the next-best by global fused rank.
+    for i in range(len(fused)):
+        if len(chosen) >= n_results:
+            break
+        chosen.add(i)
+    # Emit in fused order - lead + rank preserved, representation guaranteed.
+    return [fused[i] for i in sorted(chosen)]
+
+
 def rrf_fuse(
     ranked_lists: dict[str, list[Hit]],
     *,
@@ -188,6 +270,7 @@ def rrf_fuse(
     n_results: Optional[int] = None,
     fusion_mode: str = "rrf",
     authority_margin: float = 0.0,
+    min_per_store: int = 1,
 ) -> list[FusedHit]:
     """Interleave independent stores' ranked lists by Reciprocal Rank Fusion.
 
@@ -204,6 +287,19 @@ def rrf_fuse(
             to 1.0 for any store not listed. This is the ONLY place cross-
             store preference is expressed, and it never touches magnitudes.
         n_results: trim the merged list to this many. None = return all.
+        fusion_mode: how cross-store ranking is scored. "rrf" (default) is
+            rank-only RRF - the embedder-agnostic spine. "percentile" scores
+            on intra-store percentile (rank-1 == 100 everywhere); "rrf_pct"
+            keeps the RRF score but breaks ties on percentile instead of
+            store-iteration order. An unknown value normalizes to "rrf".
+        authority_margin: > 0 turns on most-confident-store-wins promotion -
+            the clearly-confident store's top hit leads the packet even if
+            rank-only fusion buried it (see _apply_authority). 0 disables it,
+            making "rrf" mode byte-identical to the original rank-only RRF.
+        min_per_store: guarantee each contributing store at least this many of
+            its top hits survive the n_results trim - the packet's diversity
+            floor (a fact AND a scar). 1 (default) seats every answering store
+            when n allows; 0 disables (pure top-n trim). See _trim_with_quota.
 
     Returns:
         FusedHits sorted by rrf_score descending. Ties (a store's rank-i vs
@@ -215,6 +311,14 @@ def rrf_fuse(
         magnitude-incomparability RRF exists to avoid.
     """
     weights = weights or {}
+
+    # Defensive normalization: an unrecognized mode has ONE defined behavior -
+    # rank-only RRF - rather than silently falling through to it by accident.
+    # The config layer additionally WARNS on a bad value (where a human typo
+    # actually happens); here we just guarantee the engine never surprises a
+    # direct caller. Keeps the engine pure (no logging) while still explicit.
+    if fusion_mode not in _VALID_FUSION_MODES:
+        fusion_mode = "rrf"
 
     # Intra-store percentile (common currency) for the N-store modes: a store's
     # rank-1 of n -> 100, rank-n -> 100/n. Lets stores rank against each other by
@@ -255,6 +359,10 @@ def rrf_fuse(
     if authority_margin > 0:
         fused = _apply_authority(fused, ranked_lists, authority_margin)
 
+    # Trim to n_results, but guarantee each contributing store keeps at least
+    # min_per_store seats (the packet stays a diverse briefing, not all-one-class).
+    # min_per_store<=0 makes this a plain top-n trim, and the equal-weight case is
+    # a no-op since RRF already interleaved the stores.
     if n_results is not None:
-        fused = fused[:n_results]
+        fused = _trim_with_quota(fused, n_results, min_per_store)
     return fused

@@ -1,16 +1,1 @@
-[
-  {
-    "name": "locidev",
-    "type": "seren_loci",
-    "url": "http://localhost:7422",
-    "weight": 1.0,
-    "floor": 0.0
-  },
-  {
-    "name": "memdev",
-    "type": "seren_memory",
-    "url": "http://localhost:7420",
-    "weight": 1.0,
-    "floor": 0.0
-  }
-]
+[]

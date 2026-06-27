@@ -24,6 +24,19 @@ federation:
   fetch_multiplier: 2       # over-fetch per store so the merge has candidates to rank
   per_store_timeout_s: 5.0  # a slow store degrades the result, never blocks the fan
 
+  # --- result-shaping knobs (on by default; defaults are the Nano-floor sane choices) ---
+  fusion_mode: rrf          # cross-store ranking method. "rrf" = rank-only, embedder-agnostic — the
+                            # spine; survives a store changing its embedder. "percentile" ranks by
+                            # intra-store position (rank-1 == 100 everywhere); "rrf_pct" keeps the rrf
+                            # score but breaks ties on percentile. An unknown value warns + falls back to rrf.
+  authority_margin: 0.035   # when a store is clearly confident in its top hit (its intra-store margin
+                            # clears this), that hit LEADS the packet — so an exact-key fact ("here's how
+                            # it's called") isn't buried behind a merely-relevant episode. 0 disables.
+  min_per_store: 1          # diversity floor: each contributing store keeps at least this many of its top
+                            # hits through the trim, so the packet stays a briefing (a fact AND a scar),
+                            # not all-one-class. No-op when stores are equal-weight (rrf already balances);
+                            # earns its keep when you weight a store up or fan in 3+. 0 disables (pure top-n).
+
   # The stores to fan across. Adding one is just an entry here — no code.
   # type is the adapter key: "seren_loci" (left brain) | "seren_memory" (right brain).
   stores:

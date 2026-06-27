@@ -99,6 +99,7 @@ class Federation:
             n_results=n,
             fusion_mode=self._config.fusion_mode,
             authority_margin=self._config.authority_margin,
+            min_per_store=self._config.min_per_store,
         )
 
     async def _safe_search(self, bound: _BoundStore, query: str, n: int) -> tuple[str, list[Hit]]:

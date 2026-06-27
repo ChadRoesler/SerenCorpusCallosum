@@ -22,11 +22,13 @@ THE GIFT, IN CONFIG FORM:
 """
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
 
+from .fusion import _VALID_FUSION_MODES
 from .overlay import load_overlay, overlay_path_for
 
 # The shared server/tls config blocks - ONE definition for the whole family.
@@ -35,6 +37,8 @@ from .overlay import load_overlay, overlay_path_for
 # now. SCC gains the bearer-token pointers (env/keyring) + resolve_bearer free,
 # and stays pydantic-free (the engine import path stays light).
 from seren_meninges import ServerConfig, TlsConfig
+
+log = logging.getLogger("seren_corpus_callosum.config")
 
 
 # Nano-floor defaults. Tunable, but these just-work on cheap hardware.
@@ -46,6 +50,7 @@ _DEFAULT_WEIGHT = 1.0           # equal cross-store trust until told otherwise
 _DEFAULT_FLOOR = 0.0            # 0 = trust the store's own ordering; raise to ~0.3 if noisy
 _DEFAULT_FUSION_MODE = "rrf"    # rank-only RRF; "rrf_pct" / "percentile" are the N-store common-currency modes
 _DEFAULT_AUTHORITY_MARGIN = 0.035  # confident-store -> promote-to-rank-1 threshold; 0 disables. Embedder-dependent: tune via brain_eval.
+_DEFAULT_MIN_PER_STORE = 1      # diversity floor: seats each contributing store keeps through the trim; 0 disables
 
 
 @dataclass
@@ -122,6 +127,11 @@ class FederationConfig:
     # modes. authority_margin>0 turns on most-confident-store-wins promotion.
     fusion_mode: str = _DEFAULT_FUSION_MODE
     authority_margin: float = _DEFAULT_AUTHORITY_MARGIN
+    # Diversity floor: each contributing store keeps at least this many of its
+    # top hits through the n_results trim, so the packet stays a briefing (fact
+    # AND scar), not all-one-class. 1 seats every answering store when n allows;
+    # 0 disables (pure top-n). No-op for equal-weight stores (RRF already balances).
+    min_per_store: int = _DEFAULT_MIN_PER_STORE
 
     @property
     def enabled_stores(self) -> list[StoreConfig]:
@@ -151,14 +161,27 @@ class FederationConfig:
                 continue
             seen.add(sc.name)
             stores.append(sc)
+        # Validate the merge mode where a human typo actually happens. Silent
+        # config bugs are the expensive kind (cf. the SerenMemory duplicate-
+        # `storage` block): an unknown mode would otherwise degrade to plain rrf
+        # with zero signal. Warn loudly, fall back explicitly. (The engine also
+        # normalizes defensively, so behavior is defined either way.)
+        mode = str(d.get("fusion_mode", _DEFAULT_FUSION_MODE))
+        if mode not in _VALID_FUSION_MODES:
+            log.warning(
+                "unknown fusion_mode %r in federation config (known: %s); "
+                "falling back to %r",
+                mode, sorted(_VALID_FUSION_MODES), _DEFAULT_FUSION_MODE)
+            mode = _DEFAULT_FUSION_MODE
         return cls(
             stores=stores,
             k=int(d.get("k", _DEFAULT_K)),
             n_results=int(d.get("n_results", _DEFAULT_N_RESULTS)),
             fetch_multiplier=int(d.get("fetch_multiplier", _DEFAULT_FETCH_MULTIPLIER)),
             per_store_timeout_s=float(d.get("per_store_timeout_s", _DEFAULT_TIMEOUT_S)),
-            fusion_mode=str(d.get("fusion_mode", _DEFAULT_FUSION_MODE)),
+            fusion_mode=mode,
             authority_margin=float(d.get("authority_margin", _DEFAULT_AUTHORITY_MARGIN)),
+            min_per_store=int(d.get("min_per_store", _DEFAULT_MIN_PER_STORE)),
         )
 
     @classmethod

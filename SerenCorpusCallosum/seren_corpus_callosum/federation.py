@@ -38,6 +38,29 @@ class _BoundStore:
     weight: float
 
 
+def _split_topics(topic: Optional[str]) -> list[str]:
+    """Comma-joined topic string -> normalized lowercase tags. Mirrors
+    SerenMemory's own split (topics are stored as one 'a, b, c' string), kept
+    local so the engine import path stays light - SCC never imports Memory."""
+    if not topic:
+        return []
+    return [t.strip().lower() for t in str(topic).split(",") if t.strip()]
+
+
+def _collect_topics(fused: list[FusedHit]) -> list[str]:
+    """The 'center' the edges radiate from: every unique topic tag across the
+    packet, in first-seen order. Reads metadata.topic off the hits we already
+    have, so collecting the join keys costs no extra round-trip."""
+    seen: set[str] = set()
+    out: list[str] = []
+    for f in fused:
+        for tag in _split_topics(f.hit.metadata.get("topic")):
+            if tag not in seen:
+                seen.add(tag)
+                out.append(tag)
+    return out
+
+
 class Federation:
     """Owns the adapters and runs the fan. Construct once, call search() many
     times. Stateless per-call beyond the adapters it holds."""
@@ -92,7 +115,7 @@ class Federation:
             ranked_lists[name] = apply_floor(hits, bound.floor)
             weights[name] = bound.weight
 
-        return rrf_fuse(
+        fused = rrf_fuse(
             ranked_lists,
             k=self._config.k,
             weights=weights,
@@ -101,6 +124,14 @@ class Federation:
             authority_margin=self._config.authority_margin,
             min_per_store=self._config.min_per_store,
         )
+
+        # After the fan: append a small, MARKED addendum of topic-ASSOCIATION
+        # edges - entries that share a topic tag with the packet but whose
+        # wording put them out of vector reach (the scar). Bounded, deduped
+        # against the packet, and only from stores that speak /by_topic.
+        if self._config.edges_enabled and self._config.edge_budget > 0:
+            fused = await self._append_topic_edges(fused, query)
+        return fused
 
     async def _safe_search(self, bound: _BoundStore, query: str, n: int) -> tuple[str, list[Hit]]:
         """Call one store with a timeout; ANY failure -> empty list. This is
@@ -118,3 +149,54 @@ class Federation:
             return name, []
         except Exception:  # noqa: BLE001 - a sick store degrades, it doesn't crash the fan
             return name, []
+
+    async def _safe_topic_search(self, bound: _BoundStore, topics: list[str],
+                                 n: int, exclude_ids: list[str]
+                                 ) -> tuple[str, list[Hit]]:
+        """Topic-edge twin of _safe_search: call one store's search_by_topic with
+        a timeout; ANY failure -> empty list. Same graceful-degradation contract -
+        an edge join that errors just yields no edges, never sinks the packet."""
+        name = bound.adapter.name
+        try:
+            hits = await asyncio.wait_for(
+                bound.adapter.search_by_topic(topics, n, exclude_ids=exclude_ids),
+                timeout=self._config.per_store_timeout_s,
+            )
+            return name, list(hits) if hits else []
+        except asyncio.TimeoutError:
+            return name, []
+        except Exception:  # noqa: BLE001 - a sick store degrades, it doesn't crash the fan
+            return name, []
+
+    async def _append_topic_edges(self, fused: list[FusedHit],
+                                  query: str) -> list[FusedHit]:
+        """Append the bounded, MARKED topic-association addendum to the packet.
+
+        Reads the packet's center topics, fires one /by_topic per topic-capable
+        store IN PARALLEL (exclude_ids = the packet's ids, so edges are only NEW
+        context), and appends up to edge_budget results as edge FusedHits
+        (rrf_score 0.0, marked source='topic-edge' by the adapter). Edges never
+        enter the floor or the fuse - they're here by association, not magnitude,
+        and they ride AFTER the similarity-ranked hits so the ranking stays
+        honest. A store without search_by_topic (Loci) is skipped by capability
+        check; if nothing's capable or there are no topics, the packet returns
+        untouched."""
+        topics = _collect_topics(fused)
+        if not topics:
+            return fused
+        capable = [b for b in self._stores
+                   if hasattr(b.adapter, "search_by_topic")]
+        if not capable:
+            return fused
+        budget = self._config.edge_budget
+        exclude = [f.hit.id for f in fused]
+        results = await asyncio.gather(
+            *(self._safe_topic_search(b, topics, budget, exclude) for b in capable)
+        )
+        edges: list[Hit] = []
+        for _name, hits in results:
+            edges.extend(hits)
+        edges = edges[:budget]
+        edge_fused = [FusedHit(hit=h, rrf_score=0.0, store_rank=i + 1)
+                      for i, h in enumerate(edges)]
+        return fused + edge_fused

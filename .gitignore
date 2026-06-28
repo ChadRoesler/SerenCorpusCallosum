@@ -481,3 +481,4 @@ SerenCorpusCallosumVSCode/node_modules/
 SerenCorpusCallosumVSCode/seren_corpuscallosum-vscode/node_modules/
 *.vsix
 TestResults/
+runtime-stores.json

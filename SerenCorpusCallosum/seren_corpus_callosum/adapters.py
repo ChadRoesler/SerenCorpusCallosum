@@ -92,6 +92,7 @@ class SerenMemoryAdapter(_BaseAdapter):
     """
 
     type = "seren_memory"
+    default_topic_search_path = "/by_topic"
 
     async def search(self, query: str, n: int) -> list[Hit]:
         opts = self._cfg.options
@@ -123,6 +124,57 @@ class SerenMemoryAdapter(_BaseAdapter):
                 base_relevance=base_relevance_from_distance(dist),
                 raw_distance=dist,
                 native_score=_as_float_or_none(raw.get("score")),
+                metadata=meta,
+            ))
+        return hits
+
+    async def search_by_topic(self, topics: list[str], n: int,
+                              exclude_ids: Optional[list[str]] = None) -> list[Hit]:
+        """The ASSOCIATION edge: POST /by_topic (verified against SerenMemory's
+        routes/search.py) - entries sharing a topic tag with the packet, by EXACT
+        tag match, NOT vector similarity:
+
+            POST /by_topic {topics, n_results, include_short/near/long,
+                            include_superseded, exclude_ids}
+            -> {topics, hits: [{tier, content, topic, matched_topics, overlap,
+                                id, metadata}], searched_tiers}
+
+        Mapped into Hits MARKED source='topic-edge' so a consumer sees they're
+        here by association, not magnitude. base_relevance is 0.0 - there's no
+        cosine for a tag match; the strength signal is `overlap`, surfaced as
+        native_score and in metadata. exclude_ids passes the packet's ids through
+        so the join returns only NEW context. Only SerenMemory speaks this; the
+        federation calls it behind a capability check, so a store without it
+        (Loci) is simply skipped.
+        """
+        opts = self._cfg.options
+        path = opts.get("topic_search_path", self.default_topic_search_path)
+        url = f"{self._cfg.url}{path}"
+        payload = {
+            "topics": list(topics),
+            "n_results": n,
+            "include_short": bool(opts.get("include_short", True)),
+            "include_near": bool(opts.get("include_near", True)),
+            "include_long": bool(opts.get("include_long", True)),
+            "include_superseded": bool(opts.get("include_superseded", False)),
+            "exclude_ids": list(exclude_ids or []),
+        }
+        resp = await self._transport.post_json(url, payload, headers=self._auth_headers)
+        hits: list[Hit] = []
+        for raw in (resp.get("hits") or []):
+            meta = dict(raw.get("metadata") or {})
+            meta.setdefault("tier", raw.get("tier"))
+            meta.setdefault("topic", raw.get("topic"))
+            meta["matched_topics"] = raw.get("matched_topics") or []
+            meta["overlap"] = raw.get("overlap")
+            meta["source"] = "topic-edge"   # provenance: association, not similarity
+            hits.append(Hit(
+                store=self.name,
+                id=str(raw.get("id", "")),
+                content=raw.get("content", ""),
+                base_relevance=0.0,          # no cosine for a tag match; see overlap
+                raw_distance=None,
+                native_score=_as_float_or_none(raw.get("overlap")),
                 metadata=meta,
             ))
         return hits

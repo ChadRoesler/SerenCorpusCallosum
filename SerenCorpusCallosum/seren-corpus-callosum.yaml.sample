@@ -37,6 +37,15 @@ federation:
                             # not all-one-class. No-op when stores are equal-weight (rrf already balances);
                             # earns its keep when you weight a store up or fan in 3+. 0 disables (pure top-n).
 
+  # --- topic-association edges (on by default) ---
+  edges_enabled: true       # after the vector fan, append a few entries that share a topic TAG with the
+                            # packet — exact-tag match, NOT similarity — so a scar whose wording put it out
+                            # of vector reach still surfaces. A small MARKED addendum (metadata.source =
+                            # "topic-edge"), appended AFTER the n_results hits: never competing for their
+                            # slots, never floored or fused. false = pure vector fan. Only stores that speak
+                            # /by_topic (seren_memory) contribute; seren_loci has no topics and is skipped.
+  edge_budget: 3            # max association edges appended (bounded addendum on top of n_results). 0 also disables.
+
   # The stores to fan across. Adding one is just an entry here — no code.
   # type is the adapter key: "seren_loci" (left brain) | "seren_memory" (right brain).
   stores:

@@ -51,6 +51,8 @@ _DEFAULT_FLOOR = 0.0            # 0 = trust the store's own ordering; raise to ~
 _DEFAULT_FUSION_MODE = "rrf"    # rank-only RRF; "rrf_pct" / "percentile" are the N-store common-currency modes
 _DEFAULT_AUTHORITY_MARGIN = 0.035  # confident-store -> promote-to-rank-1 threshold; 0 disables. Embedder-dependent: tune via brain_eval.
 _DEFAULT_MIN_PER_STORE = 1      # diversity floor: seats each contributing store keeps through the trim; 0 disables
+_DEFAULT_EDGES_ENABLED = True   # append topic-association edges to the packet after the fan; False = pure vector
+_DEFAULT_EDGE_BUDGET = 3        # max association edges appended (a small, bounded addendum on top of n_results)
 
 
 @dataclass
@@ -132,6 +134,13 @@ class FederationConfig:
     # AND scar), not all-one-class. 1 seats every answering store when n allows;
     # 0 disables (pure top-n). No-op for equal-weight stores (RRF already balances).
     min_per_store: int = _DEFAULT_MIN_PER_STORE
+    # Topic-association edges: after the fan, surface a few entries that share a
+    # topic TAG with the packet (EXACT-tag match, not vector similarity) - the
+    # scar the wording buried. A small MARKED addendum (source='topic-edge'),
+    # appended after the n_results packet, NOT competing for its slots.
+    # edges_enabled off = pure vector fan; edge_budget 0 also disables.
+    edges_enabled: bool = _DEFAULT_EDGES_ENABLED
+    edge_budget: int = _DEFAULT_EDGE_BUDGET
 
     @property
     def enabled_stores(self) -> list[StoreConfig]:
@@ -182,6 +191,8 @@ class FederationConfig:
             fusion_mode=mode,
             authority_margin=float(d.get("authority_margin", _DEFAULT_AUTHORITY_MARGIN)),
             min_per_store=int(d.get("min_per_store", _DEFAULT_MIN_PER_STORE)),
+            edges_enabled=bool(d.get("edges_enabled", _DEFAULT_EDGES_ENABLED)),
+            edge_budget=int(d.get("edge_budget", _DEFAULT_EDGE_BUDGET)),
         )
 
     @classmethod

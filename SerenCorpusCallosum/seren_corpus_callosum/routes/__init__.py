@@ -1,6 +1,6 @@
 """seren_corpus_callosum.routes - HTTP route modules."""
 from __future__ import annotations
 
-from . import search, stores
+from . import search, stores, configure
 
-__all__ = ["search", "stores"]
+__all__ = ["search", "stores", "configure"]

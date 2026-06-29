@@ -32,6 +32,7 @@ from .config import CorpusCallosumConfig, load_config
 from .federation import Federation
 from .routes import search as search_routes
 from .routes import stores as stores_routes
+from .routes import configure as configure_routes
 
 from seren_meninges import get_version
 from seren_meninges.auth import bearer_auth_middleware
@@ -162,5 +163,6 @@ def create_app(config: CorpusCallosumConfig | None = None, transport=None) -> Fa
     # -- The fan + introspection --
     app.include_router(search_routes.router)
     app.include_router(stores_routes.router)
+    app.include_router(configure_routes.router)
 
     return app

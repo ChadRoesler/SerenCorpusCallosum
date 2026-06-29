@@ -52,6 +52,28 @@ class FusedHitOut(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class ConfigureRequest(BaseModel):
+    """Body for POST /configure - dynamically tune federation parameters.
+
+    All fields are optional; only supplied fields are changed.  Per-store
+    overrides live in the ``stores`` list.
+    """
+
+    # Federation-level knobs
+    k: Optional[int] = None
+    fusion_mode: Optional[str] = None
+    authority_margin: Optional[float] = None
+    min_per_store: Optional[int] = None
+    edges_enabled: Optional[bool] = None
+    edge_budget: Optional[int] = None
+    n_results: Optional[int] = None
+    fetch_multiplier: Optional[int] = None
+    per_store_timeout_s: Optional[float] = None
+
+    # Per-store weight/floor overrides
+    stores: Optional[list[dict[str, Any]]] = None
+
+
 class SkippedStore(BaseModel):
     """A store that couldn't be bound at build time (e.g. unknown type)."""
 

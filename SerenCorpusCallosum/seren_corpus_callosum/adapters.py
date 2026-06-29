@@ -186,8 +186,11 @@ class SerenLociAdapter(_BaseAdapter):
         -> {query, project, finder, hits: [{id, project, key, value, why,
             score, match_kind, source, raw_distance}]}
 
-    A fact's surfaced content is its `value`; key/why/match_kind ride in
-    metadata. Loci's `score` IS the within-store base relevance already
+    A fact's surfaced content is `key = value because why` — the same recipe
+    Loci's own `_finder_text` uses for embedding, so SCC fusion sees
+    meaningful text from both stores. The raw key/value/why ride in metadata
+    for callers that need to parse them separately. Loci's `score` IS the
+    within-store base relevance already
     (1/(1+distance), and 1.0 for an exact-key hit), so we use it directly
     rather than recomputing - that way exact matches correctly read as 1.0.
 
@@ -224,7 +227,9 @@ class SerenLociAdapter(_BaseAdapter):
             hits.append(Hit(
                 store=self.name,
                 id=str(raw.get("id", "")),
-                content=raw.get("value", ""),
+                # Construct meaningful content from key + value + why — same recipe
+                # Loci's own _finder_text uses for embedding. Raw fields stay in metadata.
+                content=_loci_content(raw),
                 base_relevance=base,
                 raw_distance=_as_float_or_none(raw.get("raw_distance")),
                 native_score=score,
@@ -272,6 +277,30 @@ def known_store_types() -> set[str]:
     an unknown type up front (a clean 400) instead of accepting it and having
     the fan silently skip it forever."""
     return set(_REGISTRY)
+
+
+def _loci_content(raw: dict[str, Any]) -> str:
+    """Build meaningful surfaced content from a Loci search hit.
+
+    Loci stores facts as {key, value, why}. The raw `value` alone is often
+    a bare scalar (\"3\", \"true\") that tells a reader nothing. We combine
+    them the same way Loci's own _finder_text does — ``key = value because
+    why`` — so SCC fusion sees text it can rank sensibly and callers get
+    a self-explanatory result line. Missing fields degrade gracefully:
+    no why -> just \"key = value\", no key -> just value.
+    """
+    key = raw.get("key") or ""
+    val = raw.get("value") or ""
+    why = raw.get("why")
+    if key and val:
+        parts = [key, "=", val]
+    elif val:
+        parts = [val]
+    else:
+        parts = [key] if key else [val]
+    if why:
+        parts.extend(["because", why])
+    return " ".join(parts)
 
 
 def _as_float_or_none(v: Any) -> float | None:

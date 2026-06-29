@@ -43,6 +43,7 @@
     <Compile Include="seren_corpus_callosum\models\schemas.py" />
     <Compile Include="seren_corpus_callosum\models\__init__.py" />
     <Compile Include="seren_corpus_callosum\overlay.py" />
+    <Compile Include="seren_corpus_callosum\routes\configure.py" />
     <Compile Include="seren_corpus_callosum\routes\search.py" />
     <Compile Include="seren_corpus_callosum\routes\stores.py" />
     <Compile Include="seren_corpus_callosum\routes\__init__.py" />
@@ -51,10 +52,13 @@
     <Compile Include="seren_corpus_callosum\__main__.py" />
     <Compile Include="tests\test_adapters.py" />
     <Compile Include="tests\test_app.py" />
+    <Compile Include="tests\test_configure.py" />
+    <Compile Include="tests\test_edges.py" />
     <Compile Include="tests\test_federation.py" />
     <Compile Include="tests\test_fusion.py" />
     <Compile Include="tests\test_mcp_mount.py" />
     <Compile Include="tests\test_mcp_tools.py" />
+    <Compile Include="tests\test_overlay.py" />
     <Compile Include="tests\test_stores.py" />
   </ItemGroup>
   <ItemGroup>

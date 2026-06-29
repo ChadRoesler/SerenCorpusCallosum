@@ -55,14 +55,14 @@ MEM_RESP = {
 
 # Real Loci search_loci response shape (from a live call this session).
 LOCI_RESP = {
-    "query": "cuda", "project": None, "finder": "vector",
+    "query": "cuda", "project": None, "finder": "hybrid",
     "hits": [
         {"id": "l1", "project": "jetson", "key": "cuda-no-vmm",
          "value": "Set GGML_CUDA_NO_VMM=ON at COMPILE time.", "why": "Not honored at runtime.",
-         "score": 0.531575, "match_kind": "vector", "source": "model", "raw_distance": 0.881202},
+         "score": 0.531575, "match_kind": "hybrid", "source": "model", "raw_distance": 0.881202},
         {"id": "l2", "project": "*", "key": "make-it-first",
          "value": "Make it first, then make it good.", "why": "Perfectionism gates shipping.",
-         "score": 0.45, "match_kind": "vector", "source": "model", "raw_distance": 1.222},
+         "score": 0.45, "match_kind": "hybrid", "source": "model", "raw_distance": 1.222},
     ],
 }
 
@@ -99,7 +99,7 @@ def test_loci_adapter_maps_real_shape():
     assert hits[0].raw_distance == 0.881202
     assert hits[0].metadata["key"] == "cuda-no-vmm"
     assert hits[0].metadata["why"] == "Not honored at runtime."
-    assert hits[0].metadata["match_kind"] == "vector"
+    assert hits[0].metadata["match_kind"] == "hybrid"
 
 
 def test_loci_adapter_passes_project_scope_when_set():

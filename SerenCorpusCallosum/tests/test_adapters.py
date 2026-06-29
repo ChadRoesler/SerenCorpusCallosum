@@ -94,7 +94,7 @@ def test_loci_adapter_maps_real_shape():
     hits = asyncio.run(adapter.search("cuda", 5))
 
     assert [h.id for h in hits] == ["l1", "l2"]
-    assert hits[0].content == "cuda-no-vmm Set GGML_CUDA_NO_VMM=ON at COMPILE time. Not honored at runtime."   # value is the content
+    assert hits[0].content == "cuda-no-vmm = Set GGML_CUDA_NO_VMM=ON at COMPILE time. because Not honored at runtime."   # value is the content
     assert hits[0].base_relevance == 0.531575             # Loci's score used directly (exact=1.0 safe)
     assert hits[0].raw_distance == 0.881202
     assert hits[0].metadata["key"] == "cuda-no-vmm"

@@ -62,6 +62,53 @@ seren-corpus-callosum --config seren-corpus-callosum.yaml
 
 Defaults to `0.0.0.0:7423` (memory 7420 · margin 7421 · loci 7422 · **callosum 7423**). A missing config is fine - you get a valid service that simply fans across no stores until you add some.
 
+```bash
+# Search across all fanned stores — one query, rank-fused results
+curl -X POST localhost:7423/search \
+  -H 'content-type: application/json' \
+  -d '{"query":"cuda runtime","n_results":10}'
+
+# Check health and which stores are being fanned
+curl localhost:7423/health
+```
+
+## Config
+
+`seren-corpus-callosum.yaml` (all optional — defaults are a working zero-config dev setup).
+Env vars (`SEREN_SCC_*`) override the file.
+
+```yaml
+server:
+  host: 0.0.0.0
+  port: 7423
+  bearer_token: ""        # empty = no auth (trusted LAN)
+federation:
+  k: 60                   # RRF constant — lower = more aggressive rank weighting
+  fusion_mode: rrf        # rrf | rrf_pct
+  authority_margin: 0.0   # exact-key boost margin above #1-ranked RRF hit
+  min_per_store: 0        # minimum results pulled from each store
+  n_results: 25           # default results per search
+  fetch_multiplier: 3     # fetch N× n_results from each store for fusion pool
+  per_store_timeout_s: 10.0
+  edges_enabled: false
+  edge_budget: 0
+  stores:
+    - name: facts
+      type: seren_loci
+      url: http://localhost:7422
+      weight: 1.0
+      floor: 0.0
+    - name: episodic
+      type: seren_memory
+      url: http://localhost:7420
+      weight: 1.0
+      floor: 0.0
+tls:
+  trust_system_store: false   # true (+ [corp]) for TLS-intercepting corp proxies
+```
+
+---
+
 ## The API
 
 One route that matters:

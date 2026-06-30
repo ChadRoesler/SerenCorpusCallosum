@@ -1,6 +1,6 @@
 # SerenCorpusCallosum
 
-**The callosum.** A read-only fan that federates *N* memory stores into one ranked recall surface. Left brain ([SerenCorpusCallosum](https://github.com/ChadRoesler/SerenCorpusCallosum) - structured facts) plus right brain ([SerenMemory](https://github.com/ChadRoesler/SerenMemory) - episodic memory) plus however many more you hook in - merged into a single ordered list you can hand to a model.
+**The callosum.** A read-only fan that federates *N* memory stores into one ranked recall surface. Left brain ([SerenLoci](https://github.com/ChadRoesler/SerenLoci) - structured facts) plus right brain ([SerenMemory](https://github.com/ChadRoesler/SerenMemory) - episodic memory) plus however many more you hook in - merged into a single ordered list you can hand to a model.
 
 It owns no store of its own. It remembers nothing. It only fans, floors, and merges what the hemispheres hand back. That read-only-by-construction shape is the whole point: the callosum is glue, not a place data lives.
 
@@ -8,7 +8,7 @@ It owns no store of its own. It remembers nothing. It only fans, floors, and mer
 
 ## Why Reciprocal Rank Fusion (and not "just sort by score")
 
-Every store in this family can change its embedder independently - both SerenMemory and SerenCorpusCallosum ship embedder-migration. The moment two stores run different embedders, their raw distances and scores live in **different, incomparable number spaces**. Sorting a merged list by those scores is comparing apples to a slightly different apple every time someone migrates a model.
+Every store in this family can change its embedder independently - both SerenMemory and SerenLoci ship embedder-migration. The moment two stores run different embedders, their raw distances and scores live in **different, incomparable number spaces**. Sorting a merged list by those scores is comparing apples to a slightly different apple every time someone migrates a model.
 
 So the callosum never reads magnitudes. It reads only each store's **rank ordering** - position 1, 2, 3 within its own results - and merges with Reciprocal Rank Fusion:
 
@@ -94,6 +94,54 @@ Every hit comes back with full provenance, so the merge is explainable rather th
 `score` is the cross-store RRF number it was ranked by; `store_rank` / `base_relevance` / `native_score` / `raw_distance` tell you where it came from and why it placed where it did. `stores_searched` and `skipped` tell you which hemispheres actually answered - a slow or down store degrades the result, it never takes the call down with it.
 
 Plus `GET /` (service info + the stores it's fanning) and `GET /health`.
+
+### Dynamic runtime configuration (`POST /configure`)
+
+Federation parameters can be tuned at runtime without a restart:
+
+```http
+POST /configure
+{
+  "k": 30,
+  "fusion_mode": "rrf_pct",
+  "authority_margin": 0.1,
+  "min_per_store": 3,
+  "edges_enabled": false,
+  "edge_budget": 0,
+  "n_results": 25,
+  "fetch_multiplier": 4,
+  "per_store_timeout_s": 10.0,
+  "stores": [
+    {"name": "facts", "weight": 2.0, "floor": 0.1}
+  ]
+}
+```
+
+All fields are optional — only supplied fields are changed. The live Federation is
+rebuilt immediately so the next `/search` picks up the new values. Per-store
+overrides mutate `weight`/`floor` on matching stores; an unknown store name
+returns 404, an invalid `fusion_mode` returns 422.
+
+---
+
+## Tests
+
+| Test file | What it covers |
+|-----------|----------------|
+| `tests/test_app.py` | 5 tests — HTTP search route, health/root, bearer auth, unknown-store survival, config loading from defaults/env |
+| `tests/test_federation.py` | 8 tests — fan across stores, dead/slow store graceful degradation, per-store floor, weight-based ranking, unknown-store skip, empty config |
+| `tests/test_fusion.py` | 28 tests — RRF fusion, embedder-agnostic ranking, percentile/rrf_pct modes, authority margin, exact-key promotion, per-store quota/min_per_store |
+| `tests/test_edges.py` | 8 tests — topic-association edges appended after fusion, edge budget cap, disabled mode, Loci skipped (no topics), failure degrades gracefully |
+| `tests/test_adapters.py` | 7 tests — SerenMemory + SerenLoci adapter response mapping, search-path override, dispatch by type, empty/missing hits safe |
+| `tests/test_stores.py` | 10 tests — stores endpoint, bridge viewer, add/delete managed stores, unknown-type rejection, duplicate rejection, blank-field rejection, base-store delete refused, missing 404 |
+| `tests/test_overlay.py` | 5 tests — runtime overlay load/add/remove, corrupt overlay degrades to empty, env override |
+| `tests/test_mcp_mount.py` | 2 tests — MCP mount requires federation, succeeds and exposes session manager |
+| `tests/test_mcp_tools.py` | 3 tests — MCP search tool returns full provenance, surfaces skipped stores, default n_results |
+| `tests/test_configure.py` | 9 tests — federation-level knobs (k, fusion_mode, authority, edges, n_results, fetch, timeout), per-store weight/floor overrides, unknown store → 404, invalid fusion_mode → 422, empty body, partial updates keep untouched fields, bearer auth enforced |
+
+```bash
+pytest tests/
+```
 
 ## The family
 

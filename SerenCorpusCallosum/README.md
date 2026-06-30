@@ -1,6 +1,6 @@
 # SerenCorpusCallosum
 
-**The callosum.** A read-only fan that federates *N* memory stores into one ranked recall surface. Left brain ([SerenLoci](https://github.com/ChadRoesler/SerenLoci) - structured facts) plus right brain ([SerenMemory](https://github.com/ChadRoesler/SerenMemory) - episodic memory) plus however many more you hook in - merged into a single ordered list you can hand to a model.
+**The callosum.** A read-only fan that federates *N* memory stores into one ranked recall surface. Left brain ([SerenLoci](https://github.com/ChadRoesler/SerenLoci) — structured facts) plus right brain ([SerenMemory](https://github.com/ChadRoesler/SerenMemory) — episodic memory) plus however many more you hook in — merged into a single ordered list you can hand to a model.
 
 It owns no store of its own. It remembers nothing. It only fans, floors, and merges what the hemispheres hand back. That read-only-by-construction shape is the whole point: the callosum is glue, not a place data lives.
 
@@ -8,96 +8,69 @@ It owns no store of its own. It remembers nothing. It only fans, floors, and mer
 
 ## Why Reciprocal Rank Fusion (and not "just sort by score")
 
-Every store in this family can change its embedder independently - both SerenMemory and SerenLoci ship embedder-migration. The moment two stores run different embedders, their raw distances and scores live in **different, incomparable number spaces**. Sorting a merged list by those scores is comparing apples to a slightly different apple every time someone migrates a model.
+Every store in this family can change its embedder independently — both SerenMemory and SerenLoci ship embedder-migration. The moment two stores run different embedders, their raw distances and scores live in **different, incomparable number spaces**. Sorting a merged list by those scores is comparing apples to a slightly different apple every time someone migrates a model.
 
-So the callosum never reads magnitudes. It reads only each store's **rank ordering** - position 1, 2, 3 within its own results - and merges with Reciprocal Rank Fusion:
+So the callosum never reads magnitudes. It reads only each store's **rank ordering** — position 1, 2, 3 within its own results — and merges with Reciprocal Rank Fusion:
 
 ```
 score(hit) = weight_of_store / (k + rank_in_store)      # k = 60
 ```
 
-That's **embedder-agnostic by construction**: rescale any store's scores however you like, the *order* is untouched, so the merge is untouched. There's a test that proves exactly this (`test_embedder_change_does_not_perturb_order`) - multiply one store's magnitudes by an arbitrary factor and the fused ranking comes out byte-identical.
+That's **embedder-agnostic by construction**: rescale any store's scores however you like, the *order* is untouched, so the merge is untouched. There's a test that proves exactly this (`test_embedder_change_does_not_perturb_order`) — multiply one store's magnitudes by an arbitrary factor and the fused ranking comes out byte-identical.
 
 Two knobs, and only two:
 
-- **`weight`** (per store) - the one cross-store trust lever. Trust facts more than episodes? Give CorpusCallosum a higher weight.
-- **`floor`** (per store) - a relevance floor applied *before* fusion, so "rank 1 of a bag of garbage" can't sneak to the top. Default 0 (trust the store's own ordering); raise toward ~0.3 if a store is noisy.
+- **`weight`** (per store) — the one cross-store trust lever. Trust facts more than episodes? Give Loci a higher weight.
+- **`floor`** (per store) — a relevance floor applied *before* fusion, so "rank 1 of a bag of garbage" can't sneak to the top. Default 0 (trust the store's own ordering); raise toward ~0.3 if a store is noisy.
 
-## The gift, in config form
+---
 
-Because SerenMemory is a *protocol*, not a single instance, **one adapter covers every SerenMemory-speaking store.** Adding a memory is a config entry, not a code change:
+## Implementation architecture
 
-```yaml
-federation:
-  stores:
-    - name: facts
-      type: seren_loci
-      url: http://localhost:7422
-    - name: episodic
-      type: seren_memory
-      url: http://localhost:7420
-    - name: project-xyz          # spin up a dedicated memory, fan it in:
-      type: seren_memory         # same adapter type, zero new code
-      url: http://localhost:7430
-```
+### Federation engine
 
-That's the design goal stated plainly: "give me a store for XYZ and wire it in" should be one line in a file.
+The `Federation` class owns the fan-out. On a search request it:
 
-## Install
+1. **Fans out** — dispatches the query to every active store in parallel, each via its adapter, with a per-store timeout.
+2. **Floors** — discards hits whose `base_relevance` is below the store's configured floor *before* ranking.
+3. **Ranks** — sorts each store's survivors by native score descending, assigns rank order.
+4. **Fuses** — applies RRF across all stores: `Σ weight / (k + rank_in_store)`.
+5. **Applies authority margin** — if `authority_margin > 0`, an exact-key hit (native_score = 1.0) gets boosted above the #1 RRF-ranked result by that margin.
+6. **Truncates** — returns the top `n_results`.
 
-```bash
-pip install seren-corpus-callosum            # core: just the web stack + httpx
-pip install 'seren-corpus-callosum[mcp]'     # + the `search` MCP tool surface
-pip install 'seren-corpus-callosum[corp]'    # + OS-trust-store TLS for corp proxies
-```
+A slow or down store degrades the result but never takes the call down with it. Dead stores are reported in the `skipped` field.
 
-No `[vector]` extra, ever - the callosum embeds nothing, so it never pulls torch. It's the dep-lightest service in the family and has no Python upper bound.
+### Adapter layer
 
-## Run
+Each store type has a corresponding adapter class. Adapters translate the store's native response shape into a uniform `StoreHit`:
 
-```bash
-seren-corpus-callosum --config seren-corpus-callosum.yaml
-# or: python -m seren_corpus_callosum -c seren-corpus-callosum.yaml
-```
+| Adapter | Store type | What it does |
+|---------|-----------|-------------|
+| `SerenMemoryAdapter` | `seren_memory` | Calls `POST /search` on the memory service, maps `content`/`score`/`metadata` into hits |
+| `SerenLociAdapter` | `seren_loci` | Calls `POST /search` on the loci service, maps `content`/`score`/`metadata` from the fact's `value` and `why` |
 
-Defaults to `0.0.0.0:7423` (memory 7420 · margin 7421 · loci 7422 · **callosum 7423**). A missing config is fine - you get a valid service that simply fans across no stores until you add some.
+One adapter covers every store that speaks the same protocol — adding a SerenMemory-speaking store is a config entry, not a code change.
 
-## The API
+### Overlay system
 
-One route that matters:
+Stores come from two sources merged at startup:
 
-```http
-POST /search
-{ "query": "that CUDA thing on the Xavier", "n_results": 10 }
-```
+- **Base stores** — declared in the hand-authored yaml config. Config-owned; the Bridge UI won't delete them (it points you back at the file instead).
+- **Managed stores** — added via the Bridge viewer's **+ Add store** form, persisted in a separate `runtime-stores.json` **overlay** file. Removable from the UI with the **✕** button.
 
-Every hit comes back with full provenance, so the merge is explainable rather than a black box:
+Base always wins a name collision, so the overlay can never quietly shadow something you hand-wrote. The overlay path defaults to a sibling of the config file; override with `SEREN_SCC_RUNTIME_STORES` env var.
 
-```json
-{
-  "query": "that CUDA thing on the Xavier",
-  "hits": [
-    {
-      "store": "facts",          "id": "…",
-      "content": "…",
-      "score": 0.0161,            "store_rank": 1,
-      "base_relevance": 0.84,
-      "native_score": 1.0,        "raw_distance": null,
-      "metadata": {}
-    }
-  ],
-  "stores_searched": ["facts", "episodic"],
-  "skipped": []
-}
-```
+### Edges system (optional)
 
-`score` is the cross-store RRF number it was ranked by; `store_rank` / `base_relevance` / `native_score` / `raw_distance` tell you where it came from and why it placed where it did. `stores_searched` and `skipped` tell you which hemispheres actually answered - a slow or down store degrades the result, it never takes the call down with it.
+When `edges_enabled: true`, the federation appends topic-association edges after fusion. For each hit in the fused list, the edges system looks up topically related entries from *other* stores and appends them as additional results (up to `edge_budget`). This surfaces cross-store connections — a Loci fact about a project's coding convention might pull in a Memory entry about a related discussion.
 
-Plus `GET /` (service info + the stores it's fanning) and `GET /health`.
+Edges are purely additive: they never replace or re-rank the fused list, only extend it. A disabled edges config or a store that doesn't support topic queries degrades gracefully.
 
-### Dynamic runtime configuration (`POST /configure`)
+---
 
-Federation parameters can be tuned at runtime without a restart:
+## Dynamic runtime configuration
+
+Federation parameters can be tuned at runtime without a restart via `POST /configure`:
 
 ```http
 POST /configure
@@ -117,10 +90,7 @@ POST /configure
 }
 ```
 
-All fields are optional — only supplied fields are changed. The live Federation is
-rebuilt immediately so the next `/search` picks up the new values. Per-store
-overrides mutate `weight`/`floor` on matching stores; an unknown store name
-returns 404, an invalid `fusion_mode` returns 422.
+All fields are optional — only supplied fields are changed. The live Federation is rebuilt immediately so the next `/search` picks up the new values. Per-store overrides mutate `weight`/`floor` on matching stores; an unknown store name returns 404, an invalid `fusion_mode` returns 422.
 
 ---
 
@@ -143,11 +113,13 @@ returns 404, an invalid `fusion_mode` returns 422.
 pytest tests/
 ```
 
+---
+
 ## The family
 
 | Service | Role | Port |
-|---|---|---|
-| [SerenMemory](https://github.com/ChadRoesler/SerenMemory) | right brain - episodic, consolidated memory | 7420 |
+|---------|------|------|
+| [SerenMemory](https://github.com/ChadRoesler/SerenMemory) | right brain — episodic, consolidated memory | 7420 |
 | [SerenMargin](https://github.com/ChadRoesler/SerenMargin) | private notes-to-self (opt-in) | 7421 |
 | [SerenLoci](https://github.com/ChadRoesler/SerenLoci) | left brain — keyed, deterministic facts | 7422 |
 | **SerenCorpusCallosum** | **the fan over all of them** | **7423** |

@@ -17,16 +17,24 @@ ORDER MATTERS:
     We build ranked_lists in enabled-store config order so the fusion's
     stable tie-break is deterministic and matches the operator's declared
     store order. Don't reorder.
+
+HEALTH TRACKING:
+    Every `_safe_search` call records latency + outcome in the shared
+    HealthTracker (passed at construction). This feeds the /health/stores
+    endpoint and the viewer's health panel without adding any blocking
+    overhead to the fan path — recording is fire-and-forget.
 """
 from __future__ import annotations
 
 import asyncio
+import time
 from dataclasses import dataclass
 from typing import Optional
 
 from .adapters import StoreAdapter, Transport, UnknownStoreType, build_adapter
 from .config import FederationConfig
 from .fusion import FusedHit, Hit, apply_floor, rrf_fuse
+from .health import HealthTracker
 
 
 @dataclass
@@ -63,11 +71,17 @@ def _collect_topics(fused: list[FusedHit]) -> list[str]:
 
 class Federation:
     """Owns the adapters and runs the fan. Construct once, call search() many
-    times. Stateless per-call beyond the adapters it holds."""
+    times. Stateless per-call beyond the adapters it holds.
 
-    def __init__(self, config: FederationConfig, transport: Transport):
+    If *health_tracker* is provided, every _safe_search call records latency
+    and outcome — feeding the /health/stores endpoint without blocking the fan.
+    """
+
+    def __init__(self, config: FederationConfig, transport: Transport,
+                 health_tracker: HealthTracker | None = None):
         self._config = config
         self._transport = transport
+        self._health = health_tracker or HealthTracker()
         self._stores: list[_BoundStore] = []
         self._skipped: list[tuple[str, str]] = []  # (store_name, reason) - for diagnostics
 
@@ -84,6 +98,11 @@ class Federation:
     @property
     def store_names(self) -> list[str]:
         return [b.adapter.name for b in self._stores]
+
+    @property
+    def health(self) -> HealthTracker:
+        """The health tracker collecting per-store metrics."""
+        return self._health
 
     @property
     def skipped(self) -> list[tuple[str, str]]:
@@ -135,8 +154,13 @@ class Federation:
 
     async def _safe_search(self, bound: _BoundStore, query: str, n: int) -> tuple[str, list[Hit]]:
         """Call one store with a timeout; ANY failure -> empty list. This is
-        where graceful degradation actually lives."""
+        where graceful degradation actually lives.
+
+        Records latency + outcome in `self._health` for the /health/stores
+        endpoint. Fire-and-forget — the tracker never blocks the fan.
+        """
         name = bound.adapter.name
+        t0 = time.monotonic()
         try:
             hits = await asyncio.wait_for(
                 bound.adapter.search(query, n),
@@ -144,10 +168,21 @@ class Federation:
             )
             # Defensive: an adapter that returns something weird is treated as
             # "gave nothing" rather than poisoning the merge.
+            lat = time.monotonic() - t0
+            if hits:
+                await self._health.record_success(name, lat)
+            else:
+                # Empty result is still a successful call (the store answered,
+                # it just had nothing to say). Record as success with a note.
+                await self._health.record_success(name, lat)
             return name, list(hits) if hits else []
-        except asyncio.TimeoutError:
+        except asyncio.TimeoutError as e:
+            lat = time.monotonic() - t0
+            await self._health.record_failure(name, f"timeout after {lat:.2f}s", lat)
             return name, []
-        except Exception:  # noqa: BLE001 - a sick store degrades, it doesn't crash the fan
+        except Exception as e:  # noqa: BLE001 - a sick store degrades, it doesn't crash the fan
+            lat = time.monotonic() - t0
+            await self._health.record_failure(name, str(e)[:120], lat)
             return name, []
 
     async def _safe_topic_search(self, bound: _BoundStore, topics: list[str],

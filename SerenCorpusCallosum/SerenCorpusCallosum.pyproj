@@ -37,6 +37,7 @@
     <Compile Include="seren_corpus_callosum\config.py" />
     <Compile Include="seren_corpus_callosum\federation.py" />
     <Compile Include="seren_corpus_callosum\fusion.py" />
+    <Compile Include="seren_corpus_callosum\health.py" />
     <Compile Include="seren_corpus_callosum\mcp\server.py" />
     <Compile Include="seren_corpus_callosum\mcp\tools.py" />
     <Compile Include="seren_corpus_callosum\mcp\__init__.py" />
@@ -44,6 +45,7 @@
     <Compile Include="seren_corpus_callosum\models\__init__.py" />
     <Compile Include="seren_corpus_callosum\overlay.py" />
     <Compile Include="seren_corpus_callosum\routes\configure.py" />
+    <Compile Include="seren_corpus_callosum\routes\health.py" />
     <Compile Include="seren_corpus_callosum\routes\search.py" />
     <Compile Include="seren_corpus_callosum\routes\stores.py" />
     <Compile Include="seren_corpus_callosum\routes\__init__.py" />

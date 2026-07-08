@@ -38,6 +38,22 @@
     </div>
 </section>
 
+<!-- HEALTH -->
+<section class="view" id="health">
+    <div class="stat-row" id="healthSummary" style="margin-bottom:14px;"></div>
+    <div class="stack" id="healthStack">
+        <div class="empty">Loading health metrics…</div>
+    </div>
+    <div class="hint">
+        <b>Live per-store health</b> — latency, error rates, and health status collected
+        from every fan call. A store is <span class="h-status healthy">healthy</span> if
+        &gt;90% of calls succeed with no recent failures,
+        <span class="h-status degraded">degraded</span> at &gt;70% or &lt;3 consecutive
+        failures, and <span class="h-status unhealthy">unhealthy</span> below that.
+        Unknown stores haven't been called yet.
+    </div>
+</section>
+
 <!-- OVERVIEW -->
 <section class="view" id="overview">
     <div class="stat-row" id="stats"></div>

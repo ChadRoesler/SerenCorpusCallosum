@@ -125,6 +125,59 @@ function renderStores(data) {
     el.querySelectorAll("[data-del]").forEach(b => b.onclick = () => removeStore(b.dataset.del));
 }
 
+// ---- health ----------------------------------------------------------------
+async function loadHealth() {
+    try {
+        const data = await api("/health/stores");
+        let healthy = data.healthy || 0, degraded = data.degraded || 0,
+            unhealthy = data.unhealthy || 0, unknown = data.unknown || 0;
+        document.getElementById("healthSummary").innerHTML =
+            stat(healthy, "healthy", true) +
+            stat(degraded, "degraded", false) +
+            stat(unhealthy, "unhealthy", false) +
+            stat(unknown, "unknown", false);
+        const el = document.getElementById("healthStack");
+        const stores = data.stores || [];
+        if (!stores.length) { el.innerHTML = `<div class="empty">No health data yet — make a search query to start collecting metrics.</div>`; return; }
+        el.innerHTML = stores.map(s => {
+            const status = s.health_status || "unknown";
+            let sc = status;
+            if (status === "healthy") sc = "active";
+            else if (status === "degraded") sc = "warn";
+            else if (status === "unhealthy") sc = "error";
+            else sc = "unknown";
+            const lat = s.last_latency ? `${(s.last_latency * 1000).toFixed(0)}ms` : "—";
+            const avg = s.avg_latency ? `${(s.avg_latency * 1000).toFixed(0)}ms` : "—";
+            const mx = s.max_latency ? `${(s.max_latency * 1000).toFixed(0)}ms` : "—";
+            const err = s.last_error ? escapeHtml(s.last_error) : "—";
+            return `<div class="card"><div class="health-card">
+                <div class="meta">
+                    <div class="nm"><span class="badge">${escapeHtml(s.name)}</span></div>
+                    <div class="knobs">
+                        <span>calls: ${s.total_calls}</span>
+                        <span>✓ ${s.successful_calls}</span>
+                        <span>✗ ${s.failed_calls}</span>
+                        <span>rate: ${(s.success_rate * 100).toFixed(1)}%</span>
+                    </div>
+                    <div class="knobs" style="margin-top:6px;">
+                        <span>last: ${lat}</span>
+                        <span>avg: ${avg}</span>
+                        <span>max: ${mx}</span>
+                    </div>
+                    <div class="knobs" style="margin-top:6px;">
+                        <span>errors: ${s.error_count}</span>
+                        <span>consec: ${s.consecutive_failures}</span>
+                    </div>
+                </div>
+                <div class="right">
+                    <div class="status ${sc}"><span class="dot"></span>${escapeHtml(status)}</div>
+                    ${err !== "—" ? `<div class="err-detail" title="${err}" style="font-size:11px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${err}</div>` : ""}
+                </div>
+            </div></div>`;
+        }).join("");
+    } catch (e) { showErr(e.message); }
+}
+
 // ---- overview ---------------------------------------------------------------
 async function loadOverview() {
     try {
@@ -148,6 +201,7 @@ function stat(n, lbl, accent) {
 function switchTab(tab) {
     showTab(tab);
     if (tab === "stores") loadStores();
+    if (tab === "health") loadHealth();
     if (tab === "overview") loadOverview();
 }
 
@@ -166,6 +220,7 @@ function reload() {
     const active = document.querySelector(".view.active");
     const id = active ? active.id : "";
     if (id === "stores") loadStores();
+    else if (id === "health") loadHealth();
     else if (id === "overview") loadOverview();
     else boot();
 }

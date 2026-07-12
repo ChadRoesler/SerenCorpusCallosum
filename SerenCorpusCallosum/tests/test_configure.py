@@ -1,5 +1,5 @@
 """
-Tests for the SCC /configure endpoint — dynamic runtime federation tuning.
+Tests for the SCC /configure endpoint - dynamic runtime federation tuning.
 
 Validates:
   1. Federation-level knobs (k, fusion_mode, authority_margin, etc.) update
@@ -164,7 +164,7 @@ def test_configure_empty_body_leaves_defaults():
 def test_configure_partial_update_keeps_unchanged():
     app = create_app(config=_cfg(), transport=FakeTransport())
     with TestClient(app) as client:
-        # Update only k — everything else should stay at default.
+        # Update only k - everything else should stay at default.
         r = client.post("/configure", json={"k": 99})
         assert r.status_code == 200
         data = r.json()
@@ -172,7 +172,7 @@ def test_configure_partial_update_keeps_unchanged():
         # Verify fusion_mode wasn't touched (still default "rrf").
         assert "fusion_mode" not in data["changed"]
 
-        # Now update fusion_mode — k should stay at 99.
+        # Now update fusion_mode - k should stay at 99.
         r2 = client.post("/configure", json={"fusion_mode": "percentile"})
         assert r2.status_code == 200
         data2 = r2.json()

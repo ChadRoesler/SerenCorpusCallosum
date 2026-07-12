@@ -2,7 +2,7 @@
 seren_corpus_callosum.health
 ════════════════════════════════════════════════════════════════════════
 
-Per-store health tracking — latency, error rate, success/failure counts,
+Per-store health tracking - latency, error rate, success/failure counts,
 and overall health status. Exposed via /health/stores so the viewer can
 render a health dashboard panel.
 
@@ -10,7 +10,7 @@ Every `_safe_search` call records its outcome here, making the tracker
 the single source of truth for per-store operational metrics.
 
 Nano-floor ethos: the tracker is additive and never blocks a search.
-If recording fails or the tracker isn't wired, the fan proceeds — partial
+If recording fails or the tracker isn't wired, the fan proceeds - partial
 visibility beats no visibility.
 """
 from __future__ import annotations
@@ -29,19 +29,19 @@ class StoreHealthRecord:
     reads these to render latency/error/health panels.
     """
     name: str
-    # — counts —
+    # - counts -
     total_calls: int = 0
     successful_calls: int = 0
     failed_calls: int = 0
-    # — latency (seconds, rolling window) —
+    # - latency (seconds, rolling window) -
     last_latency: float = 0.0
     avg_latency: float = 0.0          # exponential moving average (α=0.2)
     max_latency: float = 0.0
-    # — errors —
+    # - errors -
     last_error: str = ""
     error_count: int = 0
     consecutive_failures: int = 0
-    # — timestamps —
+    # - timestamps -
     last_call_ts: float = 0.0
     last_success_ts: float = 0.0
 

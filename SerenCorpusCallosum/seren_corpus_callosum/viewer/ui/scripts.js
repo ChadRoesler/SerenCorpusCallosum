@@ -1,6 +1,6 @@
-// ── SerenCorpusCallosum viewer — leaf logic ──────────────────────────────────
+// ── SerenCorpusCallosum viewer - leaf logic ──────────────────────────────────
 // Snaps onto the SerenMeninges shell. The shell ALREADY provides api(),
-// escapeHtml(), showTab(), and the bearer-token modal — this file CALLS them,
+// escapeHtml(), showTab(), and the bearer-token modal - this file CALLS them,
 // it never redefines them. (The monolith shipped its own api()/escapeHtml() and
 // wired a header that no longer exists; the shell owns the chrome now.)
 //
@@ -138,7 +138,7 @@ async function loadHealth() {
             stat(unknown, "unknown", false);
         const el = document.getElementById("healthStack");
         const stores = data.stores || [];
-        if (!stores.length) { el.innerHTML = `<div class="empty">No health data yet — make a search query to start collecting metrics.</div>`; return; }
+        if (!stores.length) { el.innerHTML = `<div class="empty">No health data yet - make a search query to start collecting metrics.</div>`; return; }
         el.innerHTML = stores.map(s => {
             const status = s.health_status || "unknown";
             let sc = status;
@@ -146,10 +146,10 @@ async function loadHealth() {
             else if (status === "degraded") sc = "warn";
             else if (status === "unhealthy") sc = "error";
             else sc = "unknown";
-            const lat = s.last_latency ? `${(s.last_latency * 1000).toFixed(0)}ms` : "—";
-            const avg = s.avg_latency ? `${(s.avg_latency * 1000).toFixed(0)}ms` : "—";
-            const mx = s.max_latency ? `${(s.max_latency * 1000).toFixed(0)}ms` : "—";
-            const err = s.last_error ? escapeHtml(s.last_error) : "—";
+            const lat = s.last_latency ? `${(s.last_latency * 1000).toFixed(0)}ms` : "-";
+            const avg = s.avg_latency ? `${(s.avg_latency * 1000).toFixed(0)}ms` : "-";
+            const mx = s.max_latency ? `${(s.max_latency * 1000).toFixed(0)}ms` : "-";
+            const err = s.last_error ? escapeHtml(s.last_error) : "-";
             return `<div class="card"><div class="health-card">
                 <div class="meta">
                     <div class="nm"><span class="badge">${escapeHtml(s.name)}</span></div>
@@ -171,7 +171,7 @@ async function loadHealth() {
                 </div>
                 <div class="right">
                     <div class="status ${sc}"><span class="dot"></span>${escapeHtml(status)}</div>
-                    ${err !== "—" ? `<div class="err-detail" title="${err}" style="font-size:11px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${err}</div>` : ""}
+                    ${err !== "-" ? `<div class="err-detail" title="${err}" style="font-size:11px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${err}</div>` : ""}
                 </div>
             </div></div>`;
         }).join("");

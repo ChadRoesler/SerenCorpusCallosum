@@ -4,7 +4,7 @@ seren_corpus_callosum.overlay
 
 UI-added stores live HERE, not in your hand-authored yaml.
 
-The base `seren-corpus-callosum.yaml` is yours — comments, ordering, intent,
+The base `seren-corpus-callosum.yaml` is yours - comments, ordering, intent,
 all of it. When you add a store from the web UI, it goes into a separate,
 machine-managed JSON file (`runtime-stores.json`, a sibling of the config by
 default) that this module owns. At startup, load_config merges these on top of
@@ -15,7 +15,7 @@ That separation is the whole point: a tidy "add a store" feature must not be
 allowed to clobber the operator's pristine config. Two surfaces, two owners.
 
 Format: a JSON array of store objects, each `{name, type, url, weight, floor}`.
-A missing or corrupt overlay degrades to "no overlay stores" — it never blocks
+A missing or corrupt overlay degrades to "no overlay stores" - it never blocks
 startup.
 """
 from __future__ import annotations

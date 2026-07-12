@@ -53,6 +53,9 @@ _DEFAULT_AUTHORITY_MARGIN = 0.035  # confident-store -> promote-to-rank-1 thresh
 _DEFAULT_MIN_PER_STORE = 1      # diversity floor: seats each contributing store keeps through the trim; 0 disables
 _DEFAULT_EDGES_ENABLED = True   # append topic-association edges to the packet after the fan; False = pure vector
 _DEFAULT_EDGE_BUDGET = 3        # max association edges appended (a small, bounded addendum on top of n_results)
+_DEFAULT_HOPS = 1               # retrieval ROUNDS. 1 = single pass (today). 2 = one hop. Nano pays nothing at 1.
+_DEFAULT_HOP_TERMS = 4          # bridge terms lifted from round-1 to query round-2 (cheap: no LLM in the loop)
+_DEFAULT_HOP_BUDGET = 5         # max hop hits appended (bounded addendum, like edges - never competes for the n_results slots)
 
 
 @dataclass
@@ -141,6 +144,19 @@ class FederationConfig:
     # edges_enabled off = pure vector fan; edge_budget 0 also disables.
     edges_enabled: bool = _DEFAULT_EDGES_ENABLED
     edge_budget: int = _DEFAULT_EDGE_BUDGET
+    # MULTI-HOP retrieval. Fusion reorders a packet; it CANNOT add a document
+    # retrieval never returned - so a question whose answer shares no term with
+    # the query ('supply chain for asper-k1' -> Sigma-Aldrich, which lives on
+    # mat_cellulose_feed_supplier) is unreachable in one pass at ANY fusion
+    # setting. A hop fixes that: round 1 fans the query, we lift BRIDGE TERMS
+    # from what came back (tokens the packet has that the query didn't), and
+    # round 2 fans those. See docs/SCC-MULTIHOP.md in SerenProbe.
+    #
+    # hops=1 is the Nano floor and the default: ZERO extra cost, byte-identical
+    # to today's behavior. Opt in per deployment or per corpus; never a silent 2x.
+    hops: int = _DEFAULT_HOPS
+    hop_terms: int = _DEFAULT_HOP_TERMS
+    hop_budget: int = _DEFAULT_HOP_BUDGET
 
     @property
     def enabled_stores(self) -> list[StoreConfig]:
@@ -193,6 +209,9 @@ class FederationConfig:
             min_per_store=int(d.get("min_per_store", _DEFAULT_MIN_PER_STORE)),
             edges_enabled=bool(d.get("edges_enabled", _DEFAULT_EDGES_ENABLED)),
             edge_budget=int(d.get("edge_budget", _DEFAULT_EDGE_BUDGET)),
+            hops=max(1, int(d.get("hops", _DEFAULT_HOPS))),          # < 1 is meaningless; clamp, never crash
+            hop_terms=int(d.get("hop_terms", _DEFAULT_HOP_TERMS)),
+            hop_budget=int(d.get("hop_budget", _DEFAULT_HOP_BUDGET)),
         )
 
     @classmethod

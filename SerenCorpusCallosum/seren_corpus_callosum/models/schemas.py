@@ -70,6 +70,15 @@ class ConfigureRequest(BaseModel):
     fetch_multiplier: Optional[int] = None
     per_store_timeout_s: Optional[float] = None
 
+    # MULTI-HOP retrieval. hops=1 (default) is a single pass and costs nothing;
+    # hops=2 runs a second round against a query EXPANDED with round-1 hit text,
+    # so the fan can reach a document that shares no term with the original
+    # query. This is a RETRIEVAL capability, not a fusion setting: no amount of
+    # rrf_k / floor / weight can add a document the stores never returned.
+    hops: Optional[int] = None
+    hop_terms: Optional[int] = None
+    hop_budget: Optional[int] = None
+
     # Per-store weight/floor overrides
     stores: Optional[list[dict[str, Any]]] = None
 

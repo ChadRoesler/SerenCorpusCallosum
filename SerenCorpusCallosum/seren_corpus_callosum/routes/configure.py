@@ -65,6 +65,13 @@ async def configure(request: Request, params: ConfigureRequest = Body(...)) -> d
         cfg.fetch_multiplier = params.fetch_multiplier
     if params.per_store_timeout_s is not None:
         cfg.per_store_timeout_s = params.per_store_timeout_s
+    if params.hops is not None:
+        # < 1 is meaningless (zero retrieval rounds retrieves nothing). Clamp.
+        cfg.hops = max(1, params.hops)
+    if params.hop_terms is not None:
+        cfg.hop_terms = params.hop_terms
+    if params.hop_budget is not None:
+        cfg.hop_budget = params.hop_budget
 
     # -- Per-store overrides --
     if params.stores:
@@ -105,6 +112,12 @@ async def configure(request: Request, params: ConfigureRequest = Body(...)) -> d
         changed["fetch_multiplier"] = cfg.fetch_multiplier
     if params.per_store_timeout_s is not None:
         changed["per_store_timeout_s"] = cfg.per_store_timeout_s
+    if params.hops is not None:
+        changed["hops"] = cfg.hops
+    if params.hop_terms is not None:
+        changed["hop_terms"] = cfg.hop_terms
+    if params.hop_budget is not None:
+        changed["hop_budget"] = cfg.hop_budget
     if params.stores:
         changed["stores"] = [
             {"name": s.name, "weight": s.weight, "floor": s.floor}

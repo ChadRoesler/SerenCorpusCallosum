@@ -22,7 +22,7 @@ HEALTH TRACKING:
     Every `_safe_search` call records latency + outcome in the shared
     HealthTracker (passed at construction). This feeds the /health/stores
     endpoint and the viewer's health panel without adding any blocking
-    overhead to the fan path — recording is fire-and-forget.
+    overhead to the fan path - recording is fire-and-forget.
 """
 from __future__ import annotations
 
@@ -74,7 +74,7 @@ class Federation:
     times. Stateless per-call beyond the adapters it holds.
 
     If *health_tracker* is provided, every _safe_search call records latency
-    and outcome — feeding the /health/stores endpoint without blocking the fan.
+    and outcome - feeding the /health/stores endpoint without blocking the fan.
     """
 
     def __init__(self, config: FederationConfig, transport: Transport,
@@ -114,7 +114,29 @@ class Federation:
 
         Over-fetches per store (n * fetch_multiplier) so the fusion has enough
         candidates, then trims to n_results after merging.
+
+        With hops > 1, a SECOND retrieval round runs (see _append_hop_hits): the
+        fan can then reach a document that shares no term with the original query.
+        hops == 1 (the default) is byte-identical to the single-pass behavior.
         """
+        fused = await self._fan(query, n_results)
+
+        # MULTI-HOP: fusion reorders a packet; it cannot ADD a document retrieval
+        # never returned. A second round can. Off by default (Nano floor).
+        hops = max(1, getattr(self._config, "hops", 1))
+        if hops > 1 and fused:
+            fused = await self._append_hop_hits(fused, query, n_results, hops)
+
+        # After the fan: append a small, MARKED addendum of topic-ASSOCIATION
+        # edges - entries that share a topic tag with the packet but whose
+        # wording put them out of vector reach (the scar). Bounded, deduped
+        # against the packet, and only from stores that speak /by_topic.
+        if self._config.edges_enabled and self._config.edge_budget > 0:
+            fused = await self._append_topic_edges(fused, query)
+        return fused
+
+    async def _fan(self, query: str, n_results: Optional[int] = None) -> list[FusedHit]:
+        """ONE retrieval round: fan out, floor, fuse. The unit a hop repeats."""
         if not self._stores:
             return []
 
@@ -134,7 +156,7 @@ class Federation:
             ranked_lists[name] = apply_floor(hits, bound.floor)
             weights[name] = bound.weight
 
-        fused = rrf_fuse(
+        return rrf_fuse(
             ranked_lists,
             k=self._config.k,
             weights=weights,
@@ -144,20 +166,80 @@ class Federation:
             min_per_store=self._config.min_per_store,
         )
 
-        # After the fan: append a small, MARKED addendum of topic-ASSOCIATION
-        # edges - entries that share a topic tag with the packet but whose
-        # wording put them out of vector reach (the scar). Bounded, deduped
-        # against the packet, and only from stores that speak /by_topic.
-        if self._config.edges_enabled and self._config.edge_budget > 0:
-            fused = await self._append_topic_edges(fused, query)
-        return fused
+    def _bridge_query(self, query: str, fused: list[FusedHit]) -> str:
+        """Build the round-2 query from what round 1 came back with.
+
+        This is PSEUDO-RELEVANCE FEEDBACK, the oldest trick in IR: assume the top
+        hits are relevant, and fold their text back into the query. It costs one
+        string join - no LLM in the retrieval loop, ever.
+
+        Why not just lift 'important tokens'? Because we TRIED that and it fails
+        on real data: frequency-ranking the round-1 packet for 'supply chain for
+        the asper-k1 strain' lifts ['expression', 'product', 'production',
+        'application'] - the SCHEMA boilerplate every Loci fact shares - and
+        round 2 on those just returns more strains. The terms that actually
+        bridge are the distinctive VALUES (cellulase, pEX-2A, glaA, A. sojae),
+        and the cheapest reliable way to carry them is to carry the hit text
+        itself and let the retriever weigh it.
+
+        The original query stays in front so round 2 is an EXPANSION, not a
+        replacement - we're widening the net, not moving it.
+        """
+        top = fused[: max(1, self._config.hop_terms)]
+        parts = [query]
+        for f in top:
+            text = (f.hit.content or "").strip()
+            if text:
+                parts.append(text[:200])          # bound it: a runaway doc can't swamp the query
+        return " ".join(parts)
+
+    async def _append_hop_hits(self, fused: list[FusedHit], query: str,
+                               n_results: Optional[int], hops: int) -> list[FusedHit]:
+        """Run further retrieval rounds and append what only a HOP could reach.
+
+        Each round re-fans an expanded query (original + round-N hit text) and
+        keeps only documents we haven't already got. Hop hits ride AFTER the
+        similarity-ranked packet - same discipline as topic edges - so a hop can
+        never demote a direct hit. They're here because they were UNREACHABLE,
+        not because they outranked anything.
+
+        Every hop hit is MARKED (metadata.hop = which round found it, and the
+        bridge query that found it), so the briefing stays explainable: you can
+        always see why a document is in the packet.
+        """
+        budget = max(0, self._config.hop_budget)
+        if budget <= 0:
+            return fused
+
+        seen = {f.hit.id for f in fused}
+        packet = list(fused)
+        frontier = fused
+
+        for hop in range(2, hops + 1):
+            bridge = self._bridge_query(query, frontier)
+            more = await self._fan(bridge, n_results)
+            fresh = [f for f in more if f.hit.id not in seen]
+            if not fresh:
+                break                              # nothing new: the hop is exhausted, stop early
+            fresh = fresh[:budget]
+            for f in fresh:
+                seen.add(f.hit.id)
+                # Provenance: WHICH round reached this, and via what bridge.
+                f.hit.metadata = {**(f.hit.metadata or {}),
+                                  "hop": hop, "hop_bridge": bridge[:120]}
+            packet = packet + fresh
+            budget -= len(fresh)
+            frontier = fresh
+            if budget <= 0:
+                break
+        return packet
 
     async def _safe_search(self, bound: _BoundStore, query: str, n: int) -> tuple[str, list[Hit]]:
         """Call one store with a timeout; ANY failure -> empty list. This is
         where graceful degradation actually lives.
 
         Records latency + outcome in `self._health` for the /health/stores
-        endpoint. Fire-and-forget — the tracker never blocks the fan.
+        endpoint. Fire-and-forget - the tracker never blocks the fan.
         """
         name = bound.adapter.name
         t0 = time.monotonic()

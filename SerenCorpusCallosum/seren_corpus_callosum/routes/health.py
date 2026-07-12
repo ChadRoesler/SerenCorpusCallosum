@@ -4,11 +4,11 @@ seren_corpus_callosum.routes.health
 
 Per-store health metrics endpoint for the SCC viewer's Health tab.
 
-    GET /health/stores  —  latency/error/health snapshot per store
+    GET /health/stores  -  latency/error/health snapshot per store
 
 Data is collected by the HealthTracker inside the Federation and exposed
 here so the viewer can render per-store health panels. The tracker never
-blocks the fan — this is visibility without overhead.
+blocks the fan - this is visibility without overhead.
 """
 from __future__ import annotations
 

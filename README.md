@@ -63,7 +63,7 @@ seren-corpus-callosum --config seren-corpus-callosum.yaml
 Defaults to `0.0.0.0:7423` (memory 7420 · margin 7421 · loci 7422 · **callosum 7423**). A missing config is fine - you get a valid service that simply fans across no stores until you add some.
 
 ```bash
-# Search across all fanned stores — one query, rank-fused results
+# Search across all fanned stores - one query, rank-fused results
 curl -X POST localhost:7423/search \
   -H 'content-type: application/json' \
   -d '{"query":"cuda runtime","n_results":10}'
@@ -74,7 +74,7 @@ curl localhost:7423/health
 
 ## Config
 
-`seren-corpus-callosum.yaml` (all optional — defaults are a working zero-config dev setup).
+`seren-corpus-callosum.yaml` (all optional - defaults are a working zero-config dev setup).
 Env vars (`SEREN_SCC_*`) override the file.
 
 ```yaml
@@ -83,7 +83,7 @@ server:
   port: 7423
   bearer_token: ""        # empty = no auth (trusted LAN)
 federation:
-  k: 60                   # RRF constant — lower = more aggressive rank weighting
+  k: 60                   # RRF constant - lower = more aggressive rank weighting
   fusion_mode: rrf        # rrf | rrf_pct
   authority_margin: 0.0   # exact-key boost margin above #1-ranked RRF hit
   min_per_store: 0        # minimum results pulled from each store
@@ -164,7 +164,7 @@ POST /configure
 }
 ```
 
-All fields are optional — only supplied fields are changed. The live Federation is
+All fields are optional - only supplied fields are changed. The live Federation is
 rebuilt immediately so the next `/search` picks up the new values. Per-store
 overrides mutate `weight`/`floor` on matching stores; an unknown store name
 returns 404, an invalid `fusion_mode` returns 422.
@@ -175,16 +175,16 @@ returns 404, an invalid `fusion_mode` returns 422.
 
 | Test file | What it covers |
 |-----------|----------------|
-| `tests/test_app.py` | 5 tests — HTTP search route, health/root, bearer auth, unknown-store survival, config loading from defaults/env |
-| `tests/test_federation.py` | 8 tests — fan across stores, dead/slow store graceful degradation, per-store floor, weight-based ranking, unknown-store skip, empty config |
-| `tests/test_fusion.py` | 28 tests — RRF fusion, embedder-agnostic ranking, percentile/rrf_pct modes, authority margin, exact-key promotion, per-store quota/min_per_store |
-| `tests/test_edges.py` | 8 tests — topic-association edges appended after fusion, edge budget cap, disabled mode, Loci skipped (no topics), failure degrades gracefully |
-| `tests/test_adapters.py` | 7 tests — SerenMemory + SerenLoci adapter response mapping, search-path override, dispatch by type, empty/missing hits safe |
-| `tests/test_stores.py` | 10 tests — stores endpoint, bridge viewer, add/delete managed stores, unknown-type rejection, duplicate rejection, blank-field rejection, base-store delete refused, missing 404 |
-| `tests/test_overlay.py` | 5 tests — runtime overlay load/add/remove, corrupt overlay degrades to empty, env override |
-| `tests/test_mcp_mount.py` | 2 tests — MCP mount requires federation, succeeds and exposes session manager |
-| `tests/test_mcp_tools.py` | 3 tests — MCP search tool returns full provenance, surfaces skipped stores, default n_results |
-| `tests/test_configure.py` | 9 tests — federation-level knobs (k, fusion_mode, authority, edges, n_results, fetch, timeout), per-store weight/floor overrides, unknown store → 404, invalid fusion_mode → 422, empty body, partial updates keep untouched fields, bearer auth enforced |
+| `tests/test_app.py` | 5 tests - HTTP search route, health/root, bearer auth, unknown-store survival, config loading from defaults/env |
+| `tests/test_federation.py` | 8 tests - fan across stores, dead/slow store graceful degradation, per-store floor, weight-based ranking, unknown-store skip, empty config |
+| `tests/test_fusion.py` | 28 tests - RRF fusion, embedder-agnostic ranking, percentile/rrf_pct modes, authority margin, exact-key promotion, per-store quota/min_per_store |
+| `tests/test_edges.py` | 8 tests - topic-association edges appended after fusion, edge budget cap, disabled mode, Loci skipped (no topics), failure degrades gracefully |
+| `tests/test_adapters.py` | 7 tests - SerenMemory + SerenLoci adapter response mapping, search-path override, dispatch by type, empty/missing hits safe |
+| `tests/test_stores.py` | 10 tests - stores endpoint, bridge viewer, add/delete managed stores, unknown-type rejection, duplicate rejection, blank-field rejection, base-store delete refused, missing 404 |
+| `tests/test_overlay.py` | 5 tests - runtime overlay load/add/remove, corrupt overlay degrades to empty, env override |
+| `tests/test_mcp_mount.py` | 2 tests - MCP mount requires federation, succeeds and exposes session manager |
+| `tests/test_mcp_tools.py` | 3 tests - MCP search tool returns full provenance, surfaces skipped stores, default n_results |
+| `tests/test_configure.py` | 9 tests - federation-level knobs (k, fusion_mode, authority, edges, n_results, fetch, timeout), per-store weight/floor overrides, unknown store → 404, invalid fusion_mode → 422, empty body, partial updates keep untouched fields, bearer auth enforced |
 
 ```bash
 pytest tests/
@@ -196,7 +196,7 @@ pytest tests/
 |---|---|---|
 | [SerenMemory](https://github.com/ChadRoesler/SerenMemory) | right brain - episodic, consolidated memory | 7420 |
 | [SerenMargin](https://github.com/ChadRoesler/SerenMargin) | private notes-to-self (opt-in) | 7421 |
-| [SerenLoci](https://github.com/ChadRoesler/SerenLoci) | left brain — keyed, deterministic facts | 7422 |
+| [SerenLoci](https://github.com/ChadRoesler/SerenLoci) | left brain - keyed, deterministic facts | 7422 |
 | **SerenCorpusCallosum** | **the fan over all of them** | **7423** |
 
 ## License

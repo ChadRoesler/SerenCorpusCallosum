@@ -75,6 +75,23 @@ def _store_row(s: StoreConfig, bound: set, skipped: dict) -> dict:
     }
 
 
+# The knobs THIS build of the callosum actually honors on POST /configure.
+#
+# WHY ADVERTISE THIS AT ALL: a knob the SCC silently IGNORES produces identical
+# results for every value you sweep. On an eval dashboard that flatline is
+# indistinguishable from a real ceiling - and reading "tuning does nothing" as
+# "the corpus is maxed out" is exactly the wrong conclusion. SerenProbe reads
+# this list and REFUSES to sweep a knob we don't implement, so the harness can
+# never mistake an ignored parameter for a finding. If you add a knob to
+# ConfigureRequest, add it here. An honest capability list is the whole point.
+SUPPORTED_KNOBS = [
+    "k", "rrf_k", "fusion_mode", "authority_margin", "min_per_store",
+    "edges_enabled", "edge_budget", "n_results", "fetch_multiplier",
+    "per_store_timeout_s", "loci_weight", "loci_floor",
+    "hops", "hop_terms", "hop_budget",
+]
+
+
 @router.get("/stores")
 async def list_stores(request: Request) -> dict:
     cfg = request.app.state.config
@@ -86,7 +103,11 @@ async def list_stores(request: Request) -> dict:
         "active": len(bound),
         "k": cfg.federation.k,
         "n_results": cfg.federation.n_results,
+        "hops": cfg.federation.hops,
+        "hop_terms": cfg.federation.hop_terms,
+        "hop_budget": cfg.federation.hop_budget,
         "types": sorted(known_store_types()),  # for the UI's type dropdown
+        "supported_knobs": SUPPORTED_KNOBS,    # what /configure will actually honor
     }
 
 

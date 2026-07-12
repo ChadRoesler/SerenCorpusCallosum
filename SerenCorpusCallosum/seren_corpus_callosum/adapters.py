@@ -186,7 +186,7 @@ class SerenLociAdapter(_BaseAdapter):
         -> {query, project, finder, hits: [{id, project, key, value, why,
             score, match_kind, source, raw_distance}]}
 
-    A fact's surfaced content is `key = value because why` — the same recipe
+    A fact's surfaced content is `key = value because why` - the same recipe
     Loci's own `_finder_text` uses for embedding, so SCC fusion sees
     meaningful text from both stores. The raw key/value/why ride in metadata
     for callers that need to parse them separately. Loci's `score` IS the
@@ -227,7 +227,7 @@ class SerenLociAdapter(_BaseAdapter):
             hits.append(Hit(
                 store=self.name,
                 id=str(raw.get("id", "")),
-                # Construct meaningful content from key + value + why — same recipe
+                # Construct meaningful content from key + value + why - same recipe
                 # Loci's own _finder_text uses for embedding. Raw fields stay in metadata.
                 content=_loci_content(raw),
                 base_relevance=base,
@@ -284,8 +284,8 @@ def _loci_content(raw: dict[str, Any]) -> str:
 
     Loci stores facts as {key, value, why}. The raw `value` alone is often
     a bare scalar (\"3\", \"true\") that tells a reader nothing. We combine
-    them the same way Loci's own _finder_text does — ``key = value because
-    why`` — so SCC fusion sees text it can rank sensibly and callers get
+    them the same way Loci's own _finder_text does - ``key = value because
+    why`` - so SCC fusion sees text it can rank sensibly and callers get
     a self-explanatory result line. Missing fields degrade gracefully:
     no why -> just \"key = value\", no key -> just value.
     """

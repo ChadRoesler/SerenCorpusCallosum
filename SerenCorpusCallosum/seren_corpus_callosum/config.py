@@ -248,11 +248,42 @@ class FederationConfig:
 
 
 @dataclass
+class UpdatesConfig:
+    """\"Is there a newer seren-corpus-callosum\" checking. Cosmetic, opt-outable.
+
+    Needs seren-meninges[updates]. Without it the check reports
+    status="unavailable" rather than silently reading as "you're current" -
+    see seren_meninges/updates.py for why that distinction is load-bearing.
+    """
+    enabled: bool = True
+    check_interval_hours: float = 6.0
+    index_url: str = "https://pypi.org/pypi/{distribution}/json"
+    allow_prerelease: bool = False
+
+    @classmethod
+    def from_dict(cls, d: Optional[dict[str, Any]]) -> "UpdatesConfig":
+        d = d or {}
+        default = cls()
+        raw = d.get("check_interval_hours")
+        try:
+            hours = float(raw) if raw is not None else default.check_interval_hours
+        except (TypeError, ValueError):
+            hours = default.check_interval_hours
+        return cls(
+            enabled=bool(d.get("enabled", True)),
+            check_interval_hours=hours if hours > 0 else default.check_interval_hours,
+            index_url=str(d.get("index_url", "") or default.index_url),
+            allow_prerelease=bool(d.get("allow_prerelease", False)),
+        )
+
+
+@dataclass
 class CorpusCallosumConfig:
     """The whole service: server + tls + the federation it fans across."""
 
     server: ServerConfig = field(default_factory=lambda: ServerConfig(port=7423))
     tls: TlsConfig = field(default_factory=TlsConfig)
+    updates: UpdatesConfig = field(default_factory=UpdatesConfig)
     federation: FederationConfig = field(default_factory=FederationConfig)
     # Where UI-added stores persist (the runtime overlay). Set by load_config;
     # the POST/DELETE /stores handlers write here.
@@ -316,6 +347,7 @@ def load_config(path: Optional[str] = None) -> "CorpusCallosumConfig":
     cfg = CorpusCallosumConfig(
         server=ServerConfig.from_dict(data.get("server"), default_port=7423),
         tls=TlsConfig.from_dict(data.get("tls")),
+        updates=UpdatesConfig.from_dict(data.get("updates")),
         federation=fed,
         runtime_stores_path=str(overlay_file),
     )

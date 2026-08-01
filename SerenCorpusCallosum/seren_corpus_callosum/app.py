@@ -22,6 +22,7 @@ hand back. Read-only by construction.
 from __future__ import annotations
 
 import time
+import logging
 from contextlib import asynccontextmanager, AsyncExitStack
 from pathlib import Path
 
@@ -36,6 +37,7 @@ from .routes import health as health_routes
 from .routes import configure as configure_routes
 from .health import HealthTracker
 from seren_meninges import get_version
+from seren_meninges.updates import updates_payload
 from seren_meninges.auth import bearer_auth_middleware
 from seren_meninges.viewer import render_from_dir
 from seren_sinew.request_log import RequestLoggingMiddleware
@@ -44,7 +46,7 @@ from seren_sinew.request_log import RequestLoggingMiddleware
 # to the package __version__ for a source checkout. get_version never raises.
 from . import __version__ as _fallback_version
 APP_VERSION = get_version("seren-corpus-callosum", fallback=_fallback_version)
-
+log = logging.getLogger("seren_corpus_callosum")
 
 def create_app(config: CorpusCallosumConfig | None = None, transport=None) -> FastAPI:
     """Build the app. `transport` is injectable so tests can pass a fake
@@ -142,11 +144,44 @@ def create_app(config: CorpusCallosumConfig | None = None, transport=None) -> Fa
             "version": APP_VERSION,
             "stores": fed.store_names if fed else [],
             "skipped": [{"name": n, "reason": r} for n, r in (fed.skipped if fed else [])],
+            "updates": await updates_payload(
+                getattr(request.app.state, "updates", None),
+                distribution="seren-corpus-callosum", installed=APP_VERSION),
         }
 
     @app.get("/health")
     async def health():
         return {"ok": True, "ts": time.time()}
+    
+    # ── Update checker ───────────────────────────────────────
+    # "is there a newer seren-workbench". Cosmetic: it polls on a TTL,
+    # never in the request path, and every failure mode is a status string
+    # rather than an exception.
+    #
+    # The try/except guards the IMPORT, because a Meninges older than 2.0.0
+    # has no updates module. The gate is DELIBERATELY VISIBLE - state stays
+    # None and GET / reports status="unavailable" with a reason. A silent
+    # fallback would render as "you're up to date", which is the exact
+    # failure shape that let mcp 2.0.0 quietly delete this service's /mcp
+    # endpoint without anything going red.
+    try:
+        from seren_meninges.updates import UpdateChecker
+        app.state.updates = UpdateChecker(
+            "seren-corpus-callosum",
+            enabled=cfg.updates.enabled,
+            index_url=cfg.updates.index_url,
+            ttl_seconds=cfg.updates.check_interval_hours * 3600.0,
+            allow_prerelease=cfg.updates.allow_prerelease,
+            fallback_version=APP_VERSION,
+        )
+    # Catch EVERYTHING, not just ImportError. This whole feature is cosmetic -
+    # seren_meninges/version.py states the contract: a version read must never
+    # crash startup. A too-narrow catch here already bit us: cfg.updates was
+    # missing, the AttributeError sailed past `except ImportError`, and five
+    # services failed to boot on a feature that only draws a badge.
+    except Exception as exc:
+        app.state.updates = None
+        log.info("update checking unavailable (%s)", exc)
 
     @app.get("/viewer")
     async def viewer():

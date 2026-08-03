@@ -57,7 +57,7 @@ mcp = [
     # Lift the cap in the same commit that ports the mount to the MCPServer
     # API - across the whole family at once, since they're copies. Within
     # 1.x the pin stays loose: the mount tolerates transport-name drift.
-    "mcp>=1.0,<2",
+    "mcp>=1.0,<3",
 ]
 corp = [
     # Corp / intercepting-proxy support. Routes Python TLS through the OS trust

@@ -4,7 +4,7 @@
 # Every key is optional; a missing file just means "fan across no stores yet."
 
 server:
-  host: 0.0.0.0          # 0.0.0.0 = reachable on the LAN; 127.0.0.1 = local-only
+  host: 127.0.0.1        # local-only. 0.0.0.0 = reachable on the LAN - set a bearer_token first
   port: 7423             # family convention: memory 7420, margin 7421, loci 7422, callosum 7423
 
   # --- auth (optional) - empty across all three = no auth (trusted-LAN default) ---

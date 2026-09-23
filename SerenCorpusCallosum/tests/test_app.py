@@ -117,7 +117,7 @@ def test_load_config_defaults_and_env(monkeypatch=None):
     # No file, no env -> family defaults (port 7423, empty federation).
     cfg = load_config(path="/nonexistent/seren-corpus-callosum.yaml")
     assert cfg.server.port == 7423
-    assert cfg.server.host == "0.0.0.0"
+    assert cfg.server.host == "127.0.0.1"   # loopback by default (meninges 2.3.0)
     assert cfg.federation.stores == []
     # Env override wins.
     os.environ["SEREN_SCC_PORT"] = "9999"

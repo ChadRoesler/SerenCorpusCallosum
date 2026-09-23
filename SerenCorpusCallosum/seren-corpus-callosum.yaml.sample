@@ -5,6 +5,10 @@
 
 server:
   host: 127.0.0.1        # local-only. 0.0.0.0 = reachable on the LAN - set a bearer_token first
+  # allow_open_lan: false
+  #   A host beyond loopback with no token REFUSES TO START and prints the
+  #   three ways out. Set this true (or <PREFIX>_ALLOW_OPEN_LAN=1) to run open on
+  #   purpose - a trusted LAN, a lab - and it will say so on every boot.
   port: 7423             # family convention: memory 7420, margin 7421, loci 7422, callosum 7423
 
   # --- auth (optional) - empty across all three = no auth (trusted-LAN default) ---

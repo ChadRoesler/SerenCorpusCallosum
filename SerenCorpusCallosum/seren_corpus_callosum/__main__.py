@@ -12,6 +12,7 @@ import argparse
 import sys
 
 import uvicorn
+from seren_meninges.exposure import enforce_server
 
 from .app import create_app
 from .config import load_config
@@ -62,13 +63,13 @@ def main() -> None:
     args = parser.parse_args()
 
     cfg = load_config(args.config)
+    # BEFORE create_app: an open bind with no token is refused here, at zero
+    # cost, with the three ways out printed - not after the stores are wired.
+    enforce_server(cfg.server, service="seren-corpus-callosum", env_prefix="SEREN_SCC")
     _maybe_inject_truststore(cfg)
     app = create_app(cfg)
 
-    print(f"[seren-corpus-callosum] listening on {cfg.server.host}:{cfg.server.port}")
     print(f"[seren-corpus-callosum] fanning {len(cfg.federation.stores)} configured store(s)")
-    print(f"[seren-corpus-callosum] auth: "
-          f"{'enabled' if cfg.server.bearer_token else 'DISABLED (no token)'}")
 
     uvicorn.run(app, host=cfg.server.host, port=cfg.server.port, log_level="info")
 

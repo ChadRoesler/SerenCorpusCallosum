@@ -53,6 +53,8 @@ _DEFAULT_AUTHORITY_MARGIN = 0.035  # confident-store -> promote-to-rank-1 thresh
 _DEFAULT_MIN_PER_STORE = 1      # diversity floor: seats each contributing store keeps through the trim; 0 disables
 _DEFAULT_EDGES_ENABLED = True   # append topic-association edges to the packet after the fan; False = pure vector
 _DEFAULT_EDGE_BUDGET = 3        # max association edges appended (a small, bounded addendum on top of n_results)
+_DEFAULT_SATELLITE_EDGES = True  # a core hit brings its newest satellites and the core it superseded along
+_DEFAULT_SATELLITE_BUDGET = 3    # max satellite / superseded entries appended (round-robin across the packet's cores)
 _DEFAULT_HOPS = 1               # retrieval ROUNDS. 1 = single pass (today). 2 = one hop. Nano pays nothing at 1.
 _DEFAULT_HOP_TERMS = 4          # bridge terms lifted from round-1 to query round-2 (cheap: no LLM in the loop)
 _DEFAULT_HOP_BUDGET = 5         # max hop hits appended (bounded addendum, like edges - never competes for the n_results slots)
@@ -157,6 +159,17 @@ class FederationConfig:
     # edges_enabled off = pure vector fan; edge_budget 0 also disables.
     edges_enabled: bool = _DEFAULT_EDGES_ENABLED
     edge_budget: int = _DEFAULT_EDGE_BUDGET
+    # CORE -> SATELLITE edges. Long-term in SerenMemory is a core and its
+    # surroundings (settled 23 Sept 2026): recall returns cores, and each core
+    # says how many satellites stand behind it and what it superseded. With
+    # this on, the fan asks Memory for the surroundings inline and appends the
+    # newest satellites (and the superseded core) of every core in the packet
+    # as MARKED edges (source='satellite-edge' / 'supersedes-edge'), after the
+    # ranked hits and before the topic edges. Costs Memory one long-tier read
+    # per search and the callosum no extra round-trip; the budget is shared
+    # round-robin across the packet's cores so one busy core cannot take it all.
+    satellite_edges_enabled: bool = _DEFAULT_SATELLITE_EDGES
+    satellite_budget: int = _DEFAULT_SATELLITE_BUDGET
     # MULTI-HOP retrieval. Fusion reorders a packet; it CANNOT add a document
     # retrieval never returned - so a question whose answer shares no term with
     # the query ('supply chain for asper-k1' -> Sigma-Aldrich, which lives on
@@ -222,6 +235,8 @@ class FederationConfig:
             min_per_store=int(d.get("min_per_store", _DEFAULT_MIN_PER_STORE)),
             edges_enabled=bool(d.get("edges_enabled", _DEFAULT_EDGES_ENABLED)),
             edge_budget=int(d.get("edge_budget", _DEFAULT_EDGE_BUDGET)),
+            satellite_edges_enabled=bool(d.get("satellite_edges_enabled", _DEFAULT_SATELLITE_EDGES)),
+            satellite_budget=int(d.get("satellite_budget", _DEFAULT_SATELLITE_BUDGET)),
             hops=max(1, int(d.get("hops", _DEFAULT_HOPS))),          # < 1 is meaningless; clamp, never crash
             hop_terms=int(d.get("hop_terms", _DEFAULT_HOP_TERMS)),
             hop_budget=int(d.get("hop_budget", _DEFAULT_HOP_BUDGET)),

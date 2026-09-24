@@ -56,6 +56,17 @@ class _BaseAdapter:
 
     # Subclasses override: the request path and the response mapper.
     default_search_path = "/search"
+    # The most results this store's contract accepts per call. The fan
+    # over-fetches (n * fetch_multiplier) so the merge has candidates; a store
+    # that validates its n_results answers 422 to an ask above its cap, and
+    # until 24 Sept 2026 that 422 was swallowed as "gave nothing" - Memory
+    # silently dropped out of every search the README's own numbers produced.
+    # None = the store states no cap.
+    max_n: Optional[int] = None
+
+    def _clamp(self, n: int) -> int:
+        n = max(1, int(n))
+        return min(n, self.max_n) if self.max_n else n
 
     def __init__(self, cfg: StoreConfig, transport: Transport):
         self._cfg = cfg
@@ -93,16 +104,23 @@ class SerenMemoryAdapter(_BaseAdapter):
 
     type = "seren_memory"
     default_topic_search_path = "/by_topic"
+    max_n = 50                      # SerenMemory SearchRequest: n_results le=50
 
     async def search(self, query: str, n: int) -> list[Hit]:
         opts = self._cfg.options
         payload = {
             "query": query,
-            "n_results": n,
+            "n_results": self._clamp(n),
             "include_short": bool(opts.get("include_short", True)),
             "include_near": bool(opts.get("include_near", True)),
             "include_long": bool(opts.get("include_long", True)),
             "include_superseded": bool(opts.get("include_superseded", False)),
+            # A core's surroundings ride inline (its newest satellites and the
+            # core it superseded) so the federation can hang them off the hit
+            # as edges with no second round-trip. A Memory older than the
+            # docket layer ignores the field. options.with_surroundings: false
+            # spares that Memory its long-tier read when the edges are off.
+            "with_surroundings": bool(opts.get("with_surroundings", True)),
         }
         resp = await self._transport.post_json(self._search_url, payload, headers=self._auth_headers)
         hits: list[Hit] = []
@@ -117,6 +135,8 @@ class SerenMemoryAdapter(_BaseAdapter):
             meta = dict(raw.get("metadata") or {})
             meta.setdefault("tier", raw.get("tier"))
             meta.setdefault("topic", raw.get("topic"))
+            if isinstance(raw.get("surroundings"), dict):
+                meta["surroundings"] = dict(raw["surroundings"])
             hits.append(Hit(
                 store=self.name,
                 id=str(raw.get("id", "")),
@@ -152,7 +172,7 @@ class SerenMemoryAdapter(_BaseAdapter):
         url = f"{self._cfg.url}{path}"
         payload = {
             "topics": list(topics),
-            "n_results": n,
+            "n_results": self._clamp(n),
             "include_short": bool(opts.get("include_short", True)),
             "include_near": bool(opts.get("include_near", True)),
             "include_long": bool(opts.get("include_long", True)),

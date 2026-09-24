@@ -34,6 +34,9 @@ async function runSearch() {
         const searched = (data.stores_searched || []).join(", ") || "none";
         let served = `fanned: ${searched}  ·  ${data.hits.length} hit${data.hits.length === 1 ? "" : "s"}`;
         document.getElementById("served").innerHTML = escapeHtml(served) +
+            ((data.failed && data.failed.length)
+                ? `  ·  <span class="skip" style="color:var(--bad,#e5534b)">did not answer: ${data.failed.map(s => escapeHtml(s.name + " (" + s.reason + ")")).join(", ")}</span>`
+                : "") +
             ((data.skipped && data.skipped.length)
                 ? `  ·  <span class="skip">skipped: ${data.skipped.map(s => escapeHtml(s.name + " (" + s.reason + ")")).join(", ")}</span>`
                 : "");
@@ -47,16 +50,27 @@ function hitRow(h) {
     const nat = (h.native_score != null) ? `native ${h.native_score}` : "";
     const dist = (h.raw_distance != null) ? `d=${h.raw_distance}` : "";
     const foot = [rel, nat, dist].filter(Boolean).map(x => `<span>${escapeHtml(x)}</span>`).join("");
+    const m = h.metadata || {};
+    const src = m.source || "";
+    let edge = "";
+    if (src === "satellite-edge") edge = `<span class="skip" title="a supporting episode of a core in the packet">satellite of ${escapeHtml(String(m.edge_of || "").slice(0, 8))}</span>`;
+    else if (src === "supersedes-edge") edge = `<span class="skip" title="the core this packet's core replaced">superseded by ${escapeHtml(String(m.edge_of || "").slice(0, 8))}</span>`;
+    else if (src === "topic-edge") edge = `<span class="skip" title="shares a topic tag with the packet">topic edge</span>`;
+    else if (m.hop) edge = `<span class="skip" title="reached by a second retrieval round">hop ${escapeHtml(m.hop)}</span>`;
+    const sur = m.surroundings;
+    const story = (sur && (sur.satellites || sur.supersedes))
+        ? `<span title="this core has a story behind it">${sur.satellites ? `${sur.satellites} satellite${sur.satellites === 1 ? "" : "s"}` : ""}${sur.satellites && sur.supersedes ? ", " : ""}${sur.supersedes ? "supersedes one" : ""}</span>` : "";
     return `<div class="card"><div class="hit">
         <div class="score">
-          <span class="rank"><span class="h">#</span>${h.store_rank}</span>
+          <span class="rank"><span class="h">${edge ? "" : "#"}</span>${edge ? "" : h.store_rank}</span>
           <span class="badge ${storeClass(h.store)}">${escapeHtml(h.store)}</span>
         </div>
         <div>
           <div class="v">${escapeHtml(h.content)}</div>
           <div class="foot">
-            <span>rrf ${rrf}</span>
+            ${edge || `<span>rrf ${rrf}</span>`}
             ${foot}
+            ${story}
             <span class="id">${escapeHtml(h.id)}</span>
           </div>
         </div>

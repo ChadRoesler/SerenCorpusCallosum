@@ -50,6 +50,14 @@ federation:
                             # /by_topic (seren_memory) contribute; seren_loci has no topics and is skipped.
   edge_budget: 3            # max association edges appended (bounded addendum on top of n_results). 0 also disables.
 
+  # --- core -> satellite edges (on by default) ---
+  satellite_edges_enabled: true   # a SerenMemory core hit brings its newest satellites (the episodes behind it,
+                                  # with dates) and the core it superseded along, appended after the packet as
+                                  # MARKED edges (metadata.source = "satellite-edge" / "supersedes-edge",
+                                  # metadata.edge_of = the core). The counts stay on the core hit either way
+                                  # (metadata.surroundings). No extra round-trip: Memory sends them inline.
+  satellite_budget: 3             # max such edges, shared round-robin across the packet's cores. 0 disables.
+
   # The stores to fan across. Adding one is just an entry here - no code.
   # type is the adapter key: "seren_loci" (left brain) | "seren_memory" (right brain).
   stores:
@@ -59,7 +67,9 @@ federation:
       weight: 1.0           # RRF trust multiplier (equal until told otherwise)
       floor: 0.0            # per-store relevance floor pre-fusion (raise toward ~0.3 if a store is noisy)
       # enabled: true       # flip off without deleting the entry
-      # options: {}         # adapter-specific extras (e.g. a loci project scope)
+      # options: {}         # adapter-specific extras (e.g. a loci project scope; on a seren_memory store,
+                            #   with_surroundings: false spares Memory its long-tier read when the
+                            #   satellite edges are off)
       # The bearer THIS callosum presents to the store when it fans. A store
       # installed with --gen-token answers 401 to everything without one, and
       # the search then reads as "loci knows nothing". Same three pointers as
@@ -91,10 +101,10 @@ federation:
 # an update is `pip install -U seren-corpus-callosum` plus a restart, which belongs to your
 # service supervisor (systemd, NSSM), not to this process.
 #
-# Enabled here by default, but it only DOES anything if the checking code is
-# installed:  pip install 'seren-corpus-callosum[updates]'
-# Without that you get status="unavailable" plus a reason - never a quiet
-# "you're up to date" from something that never actually looked.
+# Checking is part of the core install (SerenMeninges 2.x) and on by default;
+# updates.enabled: false or SEREN_SCC_UPDATES_ENABLED=false turns it off. A
+# checker that could not look reports status="unavailable" plus a reason -
+# never a quiet "you're up to date" from something that never actually looked.
 #
 # The result is cached for check_interval_hours and the lookup never happens
 # in the request path, so the route stays fast.

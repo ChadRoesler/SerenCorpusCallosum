@@ -66,6 +66,8 @@ class ConfigureRequest(BaseModel):
     min_per_store: Optional[int] = None
     edges_enabled: Optional[bool] = None
     edge_budget: Optional[int] = None
+    satellite_edges_enabled: Optional[bool] = None
+    satellite_budget: Optional[int] = None
     n_results: Optional[int] = None
     fetch_multiplier: Optional[int] = None
     per_store_timeout_s: Optional[float] = None
@@ -90,8 +92,18 @@ class SkippedStore(BaseModel):
     reason: str
 
 
+class FailedStore(BaseModel):
+    """A store that was fanned this call and did not answer: a timeout, a
+    refused connection, a 4xx/5xx. Its hits are missing from the packet, and
+    that is a different fact from 'it had nothing to say'."""
+
+    name: str
+    reason: str
+
+
 class SearchResponse(BaseModel):
     query: str
     hits: list[FusedHitOut]
-    stores_searched: list[str]              # the stores that were actually fanned this call
-    skipped: list[SkippedStore] = Field(default_factory=list)
+    stores_searched: list[str]              # the stores that ANSWERED this call (empty is an answer)
+    failed: list[FailedStore] = Field(default_factory=list)   # fanned, did not answer, and why
+    skipped: list[SkippedStore] = Field(default_factory=list)  # never bound (config error)

@@ -134,6 +134,23 @@ def test_config_from_dict_is_lenient_and_dedups():
     assert cfg.stores[1].weight == 2.0
 
 
+def test_store_token_accepts_the_family_spelling():
+    """Every server block in the family calls its pointer `bearer_token`, so
+    that is what an operator writes under a store entry too. It used to land in
+    options unread: the fan went out with no Authorization header, both stores
+    answered 401, and the search returned [] with both listed as searched."""
+    cfg = FederationConfig.from_dict({"stores": [
+        {"name": "a", "type": "seren_memory", "url": "http://a", "bearer_token": "abc"},
+        {"name": "b", "type": "seren_loci", "url": "http://b", "bearer_token_env": "SEREN_LOCI_TOKEN"},
+        {"name": "c", "type": "seren_loci", "url": "http://c", "token": "short", "bearer_token": "ignored"},
+    ]})
+    a, b, c = cfg.stores
+    assert a.token == "abc" and "bearer_token" not in a.options
+    assert b.token_env == "SEREN_LOCI_TOKEN" and "bearer_token_env" not in b.options
+    assert c.token == "short" and "bearer_token" not in c.options   # the short key wins, the alias is dropped
+    assert a.resolve_token() == "abc"
+
+
 def test_weight_lets_one_store_outrank_another():
     # Give loci 3x trust; its rank-1 should jump ahead of mem's rank-1.
     cfg = FederationConfig(stores=[

@@ -44,6 +44,11 @@ class FakeFederation:
         self.last_call = (query, n_results)
         return self._fused
 
+    async def search_report(self, query, n_results=None):
+        from seren_corpus_callosum.federation import FanReport
+        return FanReport(hits=await self.search(query, n_results), answered=list(self.store_names),
+                         failed=[], skipped=list(self.skipped))
+
 
 def test_search_tool_returns_full_provenance():
     fed = FakeFederation(

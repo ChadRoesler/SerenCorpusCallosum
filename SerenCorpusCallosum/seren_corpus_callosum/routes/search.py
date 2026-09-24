@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Body, Request
 
-from ..models.schemas import FusedHitOut, SearchRequest, SearchResponse, SkippedStore
+from ..models.schemas import FailedStore, FusedHitOut, SearchRequest, SearchResponse, SkippedStore
 
 router = APIRouter(tags=["search"])
 
@@ -20,7 +20,8 @@ router = APIRouter(tags=["search"])
 @router.post("/search")
 async def search(request: Request, req: SearchRequest = Body(...)) -> SearchResponse:
     fed = request.app.state.federation
-    fused = await fed.search(req.query, n_results=req.n_results)
+    report = await fed.search_report(req.query, n_results=req.n_results)
+    fused = report.hits
     hits = [
         FusedHitOut(
             store=f.hit.store,
@@ -38,6 +39,7 @@ async def search(request: Request, req: SearchRequest = Body(...)) -> SearchResp
     return SearchResponse(
         query=req.query,
         hits=hits,
-        stores_searched=fed.store_names,
-        skipped=[SkippedStore(name=n, reason=r) for n, r in fed.skipped],
+        stores_searched=report.answered,
+        failed=[FailedStore(name=n, reason=r) for n, r in report.failed],
+        skipped=[SkippedStore(name=n, reason=r) for n, r in report.skipped],
     )

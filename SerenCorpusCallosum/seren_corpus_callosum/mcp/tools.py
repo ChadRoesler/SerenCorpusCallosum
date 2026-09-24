@@ -53,11 +53,15 @@ class SccToolImpl:
         `recall`) unless you specifically want just one side. Every hit carries
         provenance - which `store` it came from, its `store_rank` there, the
         cross-store `score` it was ranked by, and the within-store
-        `base_relevance` - so the merge is explainable. `stores_searched` and
-        `skipped` tell you which stores actually answered; a slow or down store
-        degrades the result, it never takes the call down.
+        `base_relevance` - so the merge is explainable. `stores_searched` is
+        the stores that ANSWERED; `failed` names a store that was fanned and
+        did not answer, with why; `skipped` was never bound. A slow or down
+        store degrades the result, it never takes the call down. A core hit
+        carries `surroundings` (satellite count, what it superseded); its
+        newest satellites ride after the packet as `satellite-edge` hits.
         """
-        fused = await self.federation.search(query, n_results=n_results)
+        report = await self.federation.search_report(query, n_results=n_results)
+        fused = report.hits
         return {
             "query": query,
             "hits": [
@@ -74,8 +78,9 @@ class SccToolImpl:
                 }
                 for f in fused
             ],
-            "stores_searched": self.federation.store_names,
-            "skipped": [{"name": n, "reason": r} for n, r in self.federation.skipped],
+            "stores_searched": report.answered,
+            "failed": [{"name": n, "reason": r} for n, r in report.failed],
+            "skipped": [{"name": n, "reason": r} for n, r in report.skipped],
         }
 
 

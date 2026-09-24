@@ -27,8 +27,10 @@ log = logging.getLogger("seren_corpus_callosum.configure")
 
 
 def _rebuild_federation(state, cfg: FederationConfig) -> Federation:
-    """Build a fresh Federation from the updated config, reusing the transport."""
-    return Federation(cfg, state.transport)
+    """Build a fresh Federation from the updated config, reusing the transport
+    AND the health tracker - a rebuild used to hand the fan a fresh tracker,
+    so every /configure reset /health/stores to nothing."""
+    return Federation(cfg, state.transport, health_tracker=getattr(state, "health", None))
 
 
 @router.post("/configure")
@@ -59,12 +61,20 @@ async def configure(request: Request, params: ConfigureRequest = Body(...)) -> d
         cfg.edges_enabled = params.edges_enabled
     if params.edge_budget is not None:
         cfg.edge_budget = params.edge_budget
+    if params.satellite_edges_enabled is not None:
+        cfg.satellite_edges_enabled = params.satellite_edges_enabled
+    if params.satellite_budget is not None:
+        cfg.satellite_budget = max(0, params.satellite_budget)
     if params.n_results is not None:
         cfg.n_results = params.n_results
     if params.fetch_multiplier is not None:
         cfg.fetch_multiplier = params.fetch_multiplier
     if params.per_store_timeout_s is not None:
         cfg.per_store_timeout_s = params.per_store_timeout_s
+        # The fan's wait_for reads the config live; the httpx client does not.
+        tx = getattr(request.app.state, "transport", None)
+        if hasattr(tx, "set_timeout"):
+            tx.set_timeout(cfg.per_store_timeout_s)
     if params.hops is not None:
         # < 1 is meaningless (zero retrieval rounds retrieves nothing). Clamp.
         cfg.hops = max(1, params.hops)
@@ -106,6 +116,10 @@ async def configure(request: Request, params: ConfigureRequest = Body(...)) -> d
         changed["edges_enabled"] = cfg.edges_enabled
     if params.edge_budget is not None:
         changed["edge_budget"] = cfg.edge_budget
+    if params.satellite_edges_enabled is not None:
+        changed["satellite_edges_enabled"] = cfg.satellite_edges_enabled
+    if params.satellite_budget is not None:
+        changed["satellite_budget"] = cfg.satellite_budget
     if params.n_results is not None:
         changed["n_results"] = cfg.n_results
     if params.fetch_multiplier is not None:

@@ -86,7 +86,8 @@ def _store_row(s: StoreConfig, bound: set, skipped: dict) -> dict:
 # ConfigureRequest, add it here. An honest capability list is the whole point.
 SUPPORTED_KNOBS = [
     "k", "rrf_k", "fusion_mode", "authority_margin", "min_per_store",
-    "edges_enabled", "edge_budget", "n_results", "fetch_multiplier",
+    "edges_enabled", "edge_budget", "satellite_edges_enabled", "satellite_budget",
+    "n_results", "fetch_multiplier",
     "per_store_timeout_s", "loci_weight", "loci_floor",
     "hops", "hop_terms", "hop_budget",
 ]
@@ -106,6 +107,8 @@ async def list_stores(request: Request) -> dict:
         "hops": cfg.federation.hops,
         "hop_terms": cfg.federation.hop_terms,
         "hop_budget": cfg.federation.hop_budget,
+        "satellite_edges_enabled": cfg.federation.satellite_edges_enabled,
+        "satellite_budget": cfg.federation.satellite_budget,
         "types": sorted(known_store_types()),  # for the UI's type dropdown
         "supported_knobs": SUPPORTED_KNOBS,    # what /configure will actually honor
     }
@@ -152,7 +155,8 @@ async def add_store(request: Request, req: StoreCreate = Body(...)) -> dict:
             add_to_overlay(cfg.runtime_stores_path, store)
 
         cfg.federation.stores.append(StoreConfig.from_dict({**store, "managed": True}))
-        fed = Federation(cfg.federation, request.app.state.transport)
+        fed = Federation(cfg.federation, request.app.state.transport,
+                         health_tracker=getattr(request.app.state, "health", None))
         request.app.state.federation = fed
 
     return {"ok": True, "added": name, "active": len(fed.store_names)}
@@ -179,7 +183,8 @@ async def remove_store(request: Request, name: str) -> dict:
         delete_token(_token_ref(name))
 
         cfg.federation.stores = [s for s in cfg.federation.stores if s.name != name]
-        fed = Federation(cfg.federation, request.app.state.transport)
+        fed = Federation(cfg.federation, request.app.state.transport,
+                         health_tracker=getattr(request.app.state, "health", None))
         request.app.state.federation = fed
 
     return {"ok": True, "removed": name, "active": len(fed.store_names)}

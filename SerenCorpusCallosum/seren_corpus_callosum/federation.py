@@ -38,6 +38,20 @@ from .health import HealthTracker
 
 
 @dataclass
+class FanReport:
+    """What one search actually did. `answered` are the stores whose call
+    came back this turn (empty is still an answer); `failed` are the ones that
+    did not, with why (timeout, refused, a 4xx/5xx); `skipped` were never bound
+    at all. A response that could not tell a timeout from 'knows nothing' is
+    how two 401s once read as an empty brain."""
+
+    hits: list[FusedHit]
+    answered: list[str]
+    failed: list[tuple[str, str]]
+    skipped: list[tuple[str, str]]
+
+
+@dataclass
 class _BoundStore:
     """An adapter paired with the floor we'll apply to its hits."""
 
@@ -111,15 +125,23 @@ class Federation:
 
     async def search(self, query: str, n_results: Optional[int] = None) -> list[FusedHit]:
         """Fan the query across all bound stores and return the merged ranking.
+        The list only; search_report says which stores answered."""
+        return (await self.search_report(query, n_results)).hits
 
-        Over-fetches per store (n * fetch_multiplier) so the fusion has enough
-        candidates, then trims to n_results after merging.
+    async def search_report(self, query: str, n_results: Optional[int] = None) -> FanReport:
+        """Fan the query across all bound stores: the merged ranking plus which
+        stores answered and which failed.
+
+        Over-fetches per store (n * fetch_multiplier, clamped to what the store
+        accepts) so the fusion has enough candidates, then trims to n_results
+        after merging.
 
         With hops > 1, a SECOND retrieval round runs (see _append_hop_hits): the
         fan can then reach a document that shares no term with the original query.
         hops == 1 (the default) is byte-identical to the single-pass behavior.
         """
-        fused = await self._fan(query, n_results)
+        outcome: dict[str, Optional[str]] = {}
+        fused = await self._fan(query, n_results, outcome)
 
         # MULTI-HOP: fusion reorders a packet; it cannot ADD a document retrieval
         # never returned. A second round can. Off by default (Nano floor).
@@ -127,24 +149,36 @@ class Federation:
         if hops > 1 and fused:
             fused = await self._append_hop_hits(fused, query, n_results, hops)
 
+        # A core's surroundings: its newest satellites and the core it
+        # superseded, which rode along inline on the hit. Appended as MARKED
+        # edges right after the ranked packet - they are the story behind a
+        # hit, not competitors for its slot. With the edges off the inline
+        # content is stripped and only the counts stay on the hit.
+        fused = self._append_satellite_edges(fused)
+
         # After the fan: append a small, MARKED addendum of topic-ASSOCIATION
         # edges - entries that share a topic tag with the packet but whose
         # wording put them out of vector reach (the scar). Bounded, deduped
         # against the packet, and only from stores that speak /by_topic.
         if self._config.edges_enabled and self._config.edge_budget > 0:
             fused = await self._append_topic_edges(fused, query)
-        return fused
+        answered = [n for n, err in outcome.items() if err is None]
+        failed = [(n, err) for n, err in outcome.items() if err is not None]
+        return FanReport(hits=fused, answered=answered, failed=failed, skipped=self.skipped)
 
-    async def _fan(self, query: str, n_results: Optional[int] = None) -> list[FusedHit]:
-        """ONE retrieval round: fan out, floor, fuse. The unit a hop repeats."""
+    async def _fan(self, query: str, n_results: Optional[int] = None,
+                   outcome: Optional[dict[str, Optional[str]]] = None) -> list[FusedHit]:
+        """ONE retrieval round: fan out, floor, fuse. The unit a hop repeats.
+        `outcome`, when given, collects each store's result this round: None
+        for answered, the reason for failed."""
         if not self._stores:
             return []
 
         n = n_results if n_results is not None else self._config.n_results
         fetch_n = max(n * self._config.fetch_multiplier, n)
 
-        # Fan out in parallel; each _safe_search resolves to (name, hits) and
-        # never raises (failures become empty lists inside).
+        # Fan out in parallel; each _safe_search resolves to (name, hits, error)
+        # and never raises (failures become empty lists inside).
         results = await asyncio.gather(
             *(self._safe_search(b, query, fetch_n) for b in self._stores)
         )
@@ -152,9 +186,11 @@ class Federation:
         # Build ranked_lists + weights in store order (stable tie-break).
         ranked_lists: dict[str, list[Hit]] = {}
         weights: dict[str, float] = {}
-        for bound, (name, hits) in zip(self._stores, results):
+        for bound, (name, hits, err) in zip(self._stores, results):
             ranked_lists[name] = apply_floor(hits, bound.floor)
             weights[name] = bound.weight
+            if outcome is not None:
+                outcome[name] = err
 
         return rrf_fuse(
             ranked_lists,
@@ -234,9 +270,12 @@ class Federation:
                 break
         return packet
 
-    async def _safe_search(self, bound: _BoundStore, query: str, n: int) -> tuple[str, list[Hit]]:
-        """Call one store with a timeout; ANY failure -> empty list. This is
-        where graceful degradation actually lives.
+    async def _safe_search(self, bound: _BoundStore, query: str, n: int
+                           ) -> tuple[str, list[Hit], Optional[str]]:
+        """Call one store with a timeout; ANY failure -> empty list plus the
+        reason. This is where graceful degradation actually lives: the packet
+        goes on without the store, and the report says the store was not
+        there - an empty answer and a failed call are different facts.
 
         Records latency + outcome in `self._health` for the /health/stores
         endpoint. Fire-and-forget - the tracker never blocks the fan.
@@ -248,24 +287,83 @@ class Federation:
                 bound.adapter.search(query, n),
                 timeout=self._config.per_store_timeout_s,
             )
-            # Defensive: an adapter that returns something weird is treated as
-            # "gave nothing" rather than poisoning the merge.
+            # Empty result is still a successful call (the store answered, it
+            # just had nothing to say). An adapter that returns something weird
+            # is treated as "gave nothing" rather than poisoning the merge.
             lat = time.monotonic() - t0
-            if hits:
-                await self._health.record_success(name, lat)
-            else:
-                # Empty result is still a successful call (the store answered,
-                # it just had nothing to say). Record as success with a note.
-                await self._health.record_success(name, lat)
-            return name, list(hits) if hits else []
-        except asyncio.TimeoutError as e:
+            await self._health.record_success(name, lat)
+            return name, list(hits) if hits else [], None
+        except asyncio.TimeoutError:
             lat = time.monotonic() - t0
-            await self._health.record_failure(name, f"timeout after {lat:.2f}s", lat)
-            return name, []
+            reason = f"timeout after {lat:.2f}s"
+            await self._health.record_failure(name, reason, lat)
+            return name, [], reason
         except Exception as e:  # noqa: BLE001 - a sick store degrades, it doesn't crash the fan
             lat = time.monotonic() - t0
-            await self._health.record_failure(name, str(e)[:120], lat)
-            return name, []
+            reason = f"{type(e).__name__}: {str(e)[:120]}"
+            await self._health.record_failure(name, reason, lat)
+            return name, [], reason
+
+    def _append_satellite_edges(self, fused: list[FusedHit]) -> list[FusedHit]:
+        """Hang a core's surroundings off the packet as MARKED edges.
+
+        Every SerenMemory core hit may carry `surroundings` with `recent`
+        (its newest satellites: the episodes with their dates) and
+        `supersedes_entry` (the core it replaced). Those are lifted out of the
+        hit's metadata - the counts stay so the hit still says a story exists -
+        and appended after the ranked packet as edges: rrf_score 0.0, marked
+        source='satellite-edge' / 'supersedes-edge', `edge_of` naming the core.
+        The budget is spent round-robin across the packet's cores in packet
+        order, newest satellite first, so one well-evidenced core cannot crowd
+        the rest out. Edges never enter the floor or the fuse."""
+        enabled = self._config.satellite_edges_enabled and self._config.satellite_budget > 0
+        budget = self._config.satellite_budget if enabled else 0
+        seen = {f.hit.id for f in fused}
+        queues: list[tuple[FusedHit, list[tuple[str, dict]]]] = []
+        for f in fused:
+            sur = (f.hit.metadata or {}).get("surroundings")
+            if not isinstance(sur, dict):
+                continue
+            recent = sur.pop("recent", None) or []
+            sup = sur.pop("supersedes_entry", None)
+            q: list[tuple[str, dict]] = [("satellite-edge", r) for r in recent if isinstance(r, dict)]
+            if isinstance(sup, dict):
+                q.append(("supersedes-edge", sup))
+            if q:
+                queues.append((f, q))
+        edges: list[Hit] = []
+        while queues and len(edges) < budget:
+            nxt: list[tuple[FusedHit, list[tuple[str, dict]]]] = []
+            for f, q in queues:
+                if len(edges) >= budget:
+                    break
+                kind, r = q.pop(0)
+                rid = str(r.get("id") or "")
+                if rid and rid not in seen:
+                    seen.add(rid)
+                    core = f.hit
+                    edges.append(Hit(
+                        store=core.store,
+                        id=rid,
+                        content=str(r.get("content") or ""),
+                        base_relevance=0.0,          # here by association with the core, not by cosine
+                        raw_distance=None,
+                        native_score=None,
+                        metadata={
+                            "tier": "long",
+                            "kind": "satellite" if kind == "satellite-edge" else "core",
+                            "core_id": core.id if kind == "satellite-edge" else None,
+                            "superseded_by": core.id if kind == "supersedes-edge" else None,
+                            "topic": (core.metadata or {}).get("topic"),
+                            "created_at": r.get("created_at"),
+                            "source": kind,
+                            "edge_of": core.id,
+                        },
+                    ))
+                if q:
+                    nxt.append((f, q))
+            queues = nxt
+        return fused + [FusedHit(hit=h, rrf_score=0.0, store_rank=i + 1) for i, h in enumerate(edges)]
 
     async def _safe_topic_search(self, bound: _BoundStore, topics: list[str],
                                  n: int, exclude_ids: list[str]

@@ -18,10 +18,12 @@ score(hit) = weight_of_store / (k + rank_in_store)      # k = 60
 
 That's **embedder-agnostic by construction**: rescale any store's scores however you like, the *order* is untouched, so the merge is untouched. There's a test that proves exactly this (`test_embedder_change_does_not_perturb_order`) - multiply one store's magnitudes by an arbitrary factor and the fused ranking comes out byte-identical.
 
-Two knobs, and only two:
+Two per-store knobs decide how much a store is trusted:
 
-- **`weight`** (per store) - the one cross-store trust lever. Trust facts more than episodes? Give CorpusCallosum a higher weight.
+- **`weight`** (per store) - the one cross-store trust lever. Trust facts more than episodes? Give Loci a higher weight.
 - **`floor`** (per store) - a relevance floor applied *before* fusion, so "rank 1 of a bag of garbage" can't sneak to the top. Default 0 (trust the store's own ordering); raise toward ~0.3 if a store is noisy.
+
+The federation has more knobs than that (fifteen honoured by `POST /configure`, listed by `GET /stores` as `supported_knobs`): the RRF constant, the fusion mode, the authority margin, the per-store seat quota, the two edge families, the hop settings, the fetch sizes and the timeout. The defaults below are the Nano-floor choices; [SerenProbe](https://github.com/ChadRoesler/SerenProbe) exists to sweep them against a real corpus.
 
 ## The gift, in config form
 
@@ -77,21 +79,26 @@ curl localhost:7423/health
 `seren-corpus-callosum.yaml` (all optional - defaults are a working zero-config dev setup).
 Env vars (`SEREN_SCC_*`) override the file.
 
+The values shown are the code's defaults (they match `seren-corpus-callosum.yaml.sample`).
+
 ```yaml
 server:
-  host: 0.0.0.0
+  host: 127.0.0.1         # beyond loopback needs a bearer (or allow_open_lan: true, on purpose)
   port: 7423
-  bearer_token: ""        # empty = no auth (trusted LAN)
+  bearer_token: ""        # or bearer_token_env / bearer_token_keyring - a pointer, not the secret
 federation:
   k: 60                   # RRF constant - lower = more aggressive rank weighting
-  fusion_mode: rrf        # rrf | rrf_pct
-  authority_margin: 0.0   # exact-key boost margin above #1-ranked RRF hit
-  min_per_store: 0        # minimum results pulled from each store
-  n_results: 25           # default results per search
-  fetch_multiplier: 3     # fetch N× n_results from each store for fusion pool
-  per_store_timeout_s: 10.0
-  edges_enabled: false
-  edge_budget: 0
+  fusion_mode: rrf        # rrf | rrf_pct | percentile
+  authority_margin: 0.035 # a store clearly confident in its top hit leads the packet; 0 disables
+  min_per_store: 1        # each answering store keeps at least this many seats through the trim; 0 disables
+  n_results: 10           # merged hits returned by default
+  fetch_multiplier: 2     # over-fetch per store (clamped to what the store accepts: Memory takes at most 50)
+  per_store_timeout_s: 5.0
+  edges_enabled: true     # topic-association edges after the packet (Memory's /by_topic)
+  edge_budget: 3
+  satellite_edges_enabled: true   # a core's newest satellites and the core it superseded, after the packet
+  satellite_budget: 3
+  hops: 1                 # retrieval rounds; 2 fans a query expanded with round-1 text (hop_terms 4, hop_budget 5)
   stores:
     - name: facts
       type: seren_loci
@@ -137,11 +144,32 @@ Every hit comes back with full provenance, so the merge is explainable rather th
     }
   ],
   "stores_searched": ["facts", "episodic"],
+  "failed": [],
   "skipped": []
 }
 ```
 
-`score` is the cross-store RRF number it was ranked by; `store_rank` / `base_relevance` / `native_score` / `raw_distance` tell you where it came from and why it placed where it did. `stores_searched` and `skipped` tell you which hemispheres actually answered - a slow or down store degrades the result, it never takes the call down with it.
+`score` is the cross-store RRF number it was ranked by; `store_rank` / `base_relevance` / `native_score` / `raw_distance` tell you where it came from and why it placed where it did.
+
+Three lists say what the fan actually did, because a timeout and "knows nothing" are different facts:
+
+- `stores_searched` - the stores that **answered** this call. An empty answer is still an answer.
+- `failed` - stores that were fanned and did not answer, each with why (`timeout after 5.00s`, `ConnectionError: refused`, `HTTPStatusError: 401 ...`). Their hits are missing from the packet. A slow or down store degrades the result, it never takes the call down with it - but the response says so.
+- `skipped` - stores never bound at all (a config error such as an unknown `type`).
+
+`GET /health/stores` keeps the running tally per store (latency, success rate, last error); it survives `POST /configure` and store changes.
+
+### A core and its surroundings
+
+Long-term in SerenMemory is a **core and its surroundings**: recall returns cores, and each core hit carries `metadata.surroundings` - how many satellites (supporting episodes, with dates) stand behind it, when the latest landed, what it superseded and what superseded it. With `satellite_edges_enabled` (the default) the fan asks Memory for those inline and appends the newest satellites, and the superseded core, **after** the ranked packet as marked edges:
+
+```json
+{ "store": "episodic", "id": "…", "content": "the episode", "score": 0.0, "store_rank": 1,
+  "metadata": { "source": "satellite-edge", "edge_of": "<core id>", "core_id": "<core id>",
+                "kind": "satellite", "created_at": 1758600000.0 } }
+```
+
+`source` is `satellite-edge` or `supersedes-edge`; `edge_of` names the core. Edges score 0.0 and never compete for the packet's slots. The budget is shared round-robin across the packet's cores, newest satellite first, so one well-evidenced core cannot crowd the rest out. Topic edges (`source: topic-edge`) come after them and never repeat one. Turned off, the counts stay on the core and nothing is appended; set `options.with_surroundings: false` on the store to spare a Memory its long-tier read as well.
 
 Plus `GET /` (service info + the stores it's fanning) and `GET /health`.
 
@@ -156,8 +184,10 @@ POST /configure
   "fusion_mode": "rrf_pct",
   "authority_margin": 0.1,
   "min_per_store": 3,
-  "edges_enabled": false,
-  "edge_budget": 0,
+  "edges_enabled": true,
+  "edge_budget": 3,
+  "satellite_edges_enabled": true,
+  "satellite_budget": 3,
   "n_results": 25,
   "fetch_multiplier": 4,
   "per_store_timeout_s": 10.0,
@@ -179,15 +209,17 @@ returns 404, an invalid `fusion_mode` returns 422.
 | Test file | What it covers |
 |-----------|----------------|
 | `tests/test_app.py` | 5 tests - HTTP search route, health/root, bearer auth, unknown-store survival, config loading from defaults/env |
-| `tests/test_federation.py` | 8 tests - fan across stores, dead/slow store graceful degradation, per-store floor, weight-based ranking, unknown-store skip, empty config |
+| `tests/test_federation.py` | 9 tests - fan across stores, dead/slow store graceful degradation, per-store floor, weight-based ranking, unknown-store skip, empty config, a store's bearer spelled the family way |
 | `tests/test_fusion.py` | 28 tests - RRF fusion, embedder-agnostic ranking, percentile/rrf_pct modes, authority margin, exact-key promotion, per-store quota/min_per_store |
-| `tests/test_edges.py` | 8 tests - topic-association edges appended after fusion, edge budget cap, disabled mode, Loci skipped (no topics), failure degrades gracefully |
-| `tests/test_adapters.py` | 7 tests - SerenMemory + SerenLoci adapter response mapping, search-path override, dispatch by type, empty/missing hits safe |
+| `tests/test_edges.py` | 7 tests - topic-association edges appended after fusion, edge budget cap, disabled mode, Loci skipped (no topics), failure degrades gracefully |
+| `tests/test_honest_fan.py` | 13 tests - the over-fetch clamped to what a store accepts; `stores_searched` = answered and `failed` names who did not with why (route and MCP tool); the health record survives /configure and store changes; a new timeout reaches the transport; satellite and superseded-core edges (order, budget, round-robin, dedup against topic edges, off = stripped) |
+| `tests/test_adapters.py` | 6 tests - SerenMemory + SerenLoci adapter response mapping, search-path override, dispatch by type, empty/missing hits safe |
 | `tests/test_stores.py` | 10 tests - stores endpoint, bridge viewer, add/delete managed stores, unknown-type rejection, duplicate rejection, blank-field rejection, base-store delete refused, missing 404 |
 | `tests/test_overlay.py` | 5 tests - runtime overlay load/add/remove, corrupt overlay degrades to empty, env override |
 | `tests/test_mcp_mount.py` | 2 tests - MCP mount requires federation, succeeds and exposes session manager |
-| `tests/test_mcp_tools.py` | 3 tests - MCP search tool returns full provenance, surfaces skipped stores, default n_results |
+| `tests/test_mcp_tools.py` | 4 tests - MCP search tool returns full provenance, surfaces skipped stores, default n_results |
 | `tests/test_configure.py` | 9 tests - federation-level knobs (k, fusion_mode, authority, edges, n_results, fetch, timeout), per-store weight/floor overrides, unknown store → 404, invalid fusion_mode → 422, empty body, partial updates keep untouched fields, bearer auth enforced |
+| `tests/test_exposure_is_wired.py` | 3 tests - a host beyond loopback with no bearer refuses to start |
 
 ```bash
 pytest tests/

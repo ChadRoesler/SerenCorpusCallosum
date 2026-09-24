@@ -38,6 +38,14 @@ class HttpTransport:
         self._timeout = timeout
         self._client: Optional[Any] = None
 
+    def set_timeout(self, timeout: float) -> None:
+        """POST /configure can raise per_store_timeout_s after boot; the fan's
+        own wait_for follows the config, but the httpx client was built with
+        the boot value and would still cut the call there. Follow it."""
+        self._timeout = float(timeout)
+        if self._client is not None:
+            self._client.timeout = self._httpx.Timeout(self._timeout)
+
     async def __aenter__(self) -> "HttpTransport":
         self._client = self._httpx.AsyncClient(timeout=self._timeout)
         return self

@@ -23,6 +23,8 @@ import asyncio
 import os
 import sys
 
+import pytest
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from fastapi.testclient import TestClient  # noqa: E402
@@ -32,7 +34,6 @@ from seren_corpus_callosum.config import (  # noqa: E402
     CorpusCallosumConfig, FederationConfig, ServerConfig, StoreConfig,
 )
 from seren_corpus_callosum.federation import Federation  # noqa: E402
-from seren_corpus_callosum.mcp.tools import SccToolImpl  # noqa: E402
 
 
 MEM_RESP = {"hits": [
@@ -143,6 +144,11 @@ def test_the_route_and_the_tool_carry_failed():
         assert r["stores_searched"] == ["mem"]
         assert r["failed"] == [{"name": "loci", "reason": "RuntimeError: HTTP 401 Unauthorized"}]
         assert r["skipped"] == []
+        # The MCP tool is the [mcp] extra; CI installs the core package only.
+        # Skip the tool half there rather than failing the whole module to
+        # import (seen on CI, 24 Sept 2026: one ImportError, zero tests run).
+        pytest.importorskip("mcp")
+        from seren_corpus_callosum.mcp.tools import SccToolImpl
         out = asyncio.run(SccToolImpl(app.state.federation).search("q"))
         assert out["stores_searched"] == ["mem"] and out["failed"][0]["name"] == "loci"
 

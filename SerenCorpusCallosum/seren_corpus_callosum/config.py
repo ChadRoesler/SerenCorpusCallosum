@@ -97,6 +97,19 @@ class StoreConfig:
         # else falls back to a Nano-floor default. We don't raise on extra
         # keys - open schema - we stash unknowns in options so adapters can
         # read them and we never lose operator intent.
+        # The family spells the SAME three pointers `bearer_token*` on every
+        # server block, so an operator writing a store entry by analogy writes
+        # `bearer_token:` here too - and until 2026-09-23 that key was silently
+        # filed under options, the store fanned with no Authorization header,
+        # every call came back 401, and the search answered [] with the store
+        # listed in stores_searched. Both spellings are the same pointer now.
+        d = dict(d)
+        for short, long_ in (("token", "bearer_token"), ("token_env", "bearer_token_env"),
+                             ("token_keyring", "bearer_token_keyring")):
+            if long_ in d and not d.get(short):
+                d[short] = d.pop(long_)
+            else:
+                d.pop(long_, None)
         known = {"name", "type", "url", "weight", "floor", "enabled", "managed", "options",
                  "token", "token_env", "token_keyring"}
         extras = {k: v for k, v in d.items() if k not in known}

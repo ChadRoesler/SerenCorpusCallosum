@@ -98,6 +98,9 @@ federation:
       url: http://localhost:7422
       weight: 1.0
       floor: 0.0
+      token_env: SEREN_LOCI_TOKEN   # the bearer presented TO this store (also token / token_keyring,
+                                    # or bearer_token* - same pointers as the server block). A store
+                                    # installed with --gen-token 401s without one.
     - name: episodic
       type: seren_memory
       url: http://localhost:7420

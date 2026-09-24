@@ -60,6 +60,14 @@ federation:
       floor: 0.0            # per-store relevance floor pre-fusion (raise toward ~0.3 if a store is noisy)
       # enabled: true       # flip off without deleting the entry
       # options: {}         # adapter-specific extras (e.g. a loci project scope)
+      # The bearer THIS callosum presents to the store when it fans. A store
+      # installed with --gen-token answers 401 to everything without one, and
+      # the search then reads as "loci knows nothing". Same three pointers as
+      # the server block, resolved the same way; `bearer_token*` is accepted
+      # as the same thing.
+      # token_env: SEREN_LOCI_TOKEN          # NAME of an env var holding it (recommended)
+      # token_keyring: "seren-loci/bearer"   # "service/username" in the OS keychain
+      # token: ""                            # inline literal - escape hatch
 
     - name: memory
       type: seren_memory

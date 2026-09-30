@@ -41,16 +41,22 @@ class SccToolImpl:
         self.federation = federation
 
     async def search(self, query: str, n_results: int = 10) -> dict:
-        """Search ALL of Seren's memory in one call - the default recall.
+        """Search ALL of Seren's memory in one call. THE FIRST PLACE TO LOOK
+        whenever you need to remember something: call this before `recall` or
+        `search_loci`, and drill into one of those only when this packet is
+        not enough or you want just one side.
+
+        Why first: one call instead of two (fewer tokens); the two sides
+        ranked against each other instead of two lists you reconcile
+        yourself; and the context comes along - a core's surroundings and
+        its newest satellites ride in the packet, so you see the story
+        behind a fact without another call.
 
         Fans every configured store (the left brain's facts, the right brain's
         episodic memory, and any other store wired into this callosum), then
         merges them into one ranked list with Reciprocal Rank Fusion. RRF reads
         only each store's RANK ordering, never its raw scores, so the merge is
-        correct even when stores run different embedders.
-
-        Prefer this over the hemisphere-specific tools (`search_loci`,
-        `recall`) unless you specifically want just one side. Every hit carries
+        correct even when stores run different embedders. Every hit carries
         provenance - which `store` it came from, its `store_rank` there, the
         cross-store `score` it was ranked by, and the within-store
         `base_relevance` - so the merge is explainable. `stores_searched` is

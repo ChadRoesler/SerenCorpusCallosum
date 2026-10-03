@@ -280,3 +280,22 @@ def test_a_memory_without_surroundings_is_unchanged():
     fed = Federation(_fed_cfg(), t)
     fused = asyncio.run(fed.search("q"))
     assert [f.hit.id for f in fused] == ["m1", "l1"] and "surroundings" not in fused[0].hit.metadata
+
+
+def test_a_core_found_through_its_episode_says_so():
+    """Memory 4.9: a core is as near as its nearest satellite, and the hit
+    carries matched_via - the episode that found it - with that episode first
+    among `recent`. The packet keeps the why on the core and hangs the episode
+    off it as the first edge."""
+    import copy
+    resp = copy.deepcopy(MEM_RESP)
+    resp["hits"][0]["matched_via"] = {"id": "s1", "content": "first time", "created_at": 100.0, "raw_distance": 0.2}
+    resp["hits"][0]["surroundings"]["recent"] = [{"id": "s1", "content": "first time", "created_at": 100.0},
+                                                 {"id": "s3", "content": "third time", "created_at": 300.0}]
+    t = RecordingTransport({"http://mem/search": resp, "http://loci/search": LOCI_RESP})
+    fed = Federation(_fed_cfg(satellite_budget=3), t)
+    fused = asyncio.run(fed.search("q", n_results=10))
+    core = next(f for f in fused if f.hit.id == "c1").hit
+    assert core.metadata["matched_via"]["id"] == "s1", "the packet says why the core is here"
+    edges = [f.hit.id for f in fused if f.rrf_score == 0.0]
+    assert edges[0] == "s1", "and the episode that found it is the first edge"

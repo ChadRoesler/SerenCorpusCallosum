@@ -137,6 +137,11 @@ class SerenMemoryAdapter(_BaseAdapter):
             meta.setdefault("topic", raw.get("topic"))
             if isinstance(raw.get("surroundings"), dict):
                 meta["surroundings"] = dict(raw["surroundings"])
+            if isinstance(raw.get("matched_via"), dict):
+                # The core is in the packet because one of its satellites
+                # matched (Memory 4.9: a core is as near as its nearest
+                # episode). Kept on the hit so the packet says why it is here.
+                meta["matched_via"] = dict(raw["matched_via"])
             hits.append(Hit(
                 store=self.name,
                 id=str(raw.get("id", "")),

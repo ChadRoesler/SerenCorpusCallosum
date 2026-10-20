@@ -38,6 +38,21 @@
     </div>
 </section>
 
+<!-- KNOBS - every setting, read off in one place (Chad, 20 Oct 2026: "so it's
+     easy for someone who isn't me to be able to read off what they are
+     without having to dig"). GET /knobs; nothing here changes anything. -->
+<section class="view" id="knobs">
+    <div class="knobs-where" id="knobsWhere"></div>
+    <div id="knobsStack"><div class="empty">Reading the knobs…</div></div>
+    <div class="hint">
+        <b>Three columns</b>, because three things can disagree: <b>live</b> is what the fan runs with now
+        (<code style="font-family:var(--mono)">POST /configure</code> changes it until the next restart),
+        <b>yaml</b> is what comes back after a restart, <b>default</b> is what you get by saying nothing.
+        A row marked <span class="knob-flag twiddled">twiddled</span> is a live change nobody wrote down;
+        <span class="knob-flag chosen">set</span> is a value the yaml chose on purpose.
+    </div>
+</section>
+
 <!-- HEALTH -->
 <section class="view" id="health">
     <div class="stat-row" id="healthSummary" style="margin-bottom:14px;"></div>

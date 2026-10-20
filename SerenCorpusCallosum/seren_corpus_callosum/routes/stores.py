@@ -87,7 +87,7 @@ def _store_row(s: StoreConfig, bound: set, skipped: dict) -> dict:
 SUPPORTED_KNOBS = [
     "k", "rrf_k", "fusion_mode", "authority_margin", "min_per_store",
     "edges_enabled", "edge_budget", "satellite_edges_enabled", "satellite_budget",
-    "n_results", "fetch_multiplier",
+    "n_results", "fetch_multiplier", "budget_tokens",
     "per_store_timeout_s", "loci_weight", "loci_floor",
     "hops", "hop_terms", "hop_budget",
 ]
@@ -104,6 +104,7 @@ async def list_stores(request: Request) -> dict:
         "active": len(bound),
         "k": cfg.federation.k,
         "n_results": cfg.federation.n_results,
+        "budget_tokens": cfg.federation.budget_tokens,
         "hops": cfg.federation.hops,
         "hop_terms": cfg.federation.hop_terms,
         "hop_budget": cfg.federation.hop_budget,

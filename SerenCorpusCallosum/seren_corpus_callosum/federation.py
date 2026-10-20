@@ -33,8 +33,14 @@ from typing import Optional
 
 from .adapters import StoreAdapter, Transport, UnknownStoreType, build_adapter
 from .config import FederationConfig
-from .fusion import FusedHit, Hit, apply_floor, rrf_fuse
+from .fusion import FusedHit, Hit, apply_floor, fit_in_budget, packet_cost, row_cost, rrf_fuse
 from .health import HealthTracker
+
+# A search packed to a token budget needs enough candidates to fill the page,
+# whatever n_results says: a Loci one-liner is twenty-odd tokens, so this is
+# what one candidate is assumed to cost when the budget sizes the per-store
+# ask (each adapter still clamps the ask to its store's own cap).
+_TOKENS_PER_CANDIDATE = 16
 
 
 @dataclass
@@ -49,6 +55,8 @@ class FanReport:
     answered: list[str]
     failed: list[tuple[str, str]]
     skipped: list[tuple[str, str]]
+    budget_tokens: Optional[int] = None     # the page size this packet was packed to, if any
+    tokens: int = 0                         # the packet's estimated cost to the reader (fusion.packet_cost)
 
 
 @dataclass
@@ -123,12 +131,14 @@ class Federation:
         """Stores dropped at build time (unknown type, etc.) with reasons."""
         return list(self._skipped)
 
-    async def search(self, query: str, n_results: Optional[int] = None) -> list[FusedHit]:
+    async def search(self, query: str, n_results: Optional[int] = None,
+                     budget_tokens: Optional[int] = None) -> list[FusedHit]:
         """Fan the query across all bound stores and return the merged ranking.
         The list only; search_report says which stores answered."""
-        return (await self.search_report(query, n_results)).hits
+        return (await self.search_report(query, n_results, budget_tokens)).hits
 
-    async def search_report(self, query: str, n_results: Optional[int] = None) -> FanReport:
+    async def search_report(self, query: str, n_results: Optional[int] = None,
+                            budget_tokens: Optional[int] = None) -> FanReport:
         """Fan the query across all bound stores: the merged ranking plus which
         stores answered and which failed.
 
@@ -136,46 +146,72 @@ class Federation:
         accepts) so the fusion has enough candidates, then trims to n_results
         after merging.
 
+        With budget_tokens (this call's, else the config's default) the packet
+        is a PAGE instead: packed to that many estimated tokens of text (see
+        fusion.pack_to_budget), the per-store ask sized to fill it, and the hop
+        hits and the edges packed into what is left of the page rather than
+        appended past the trim. n_results given beside a budget is a second cap
+        on the rows. No budget anywhere is byte-identical to the row-count
+        packet.
+
         With hops > 1, a SECOND retrieval round runs (see _append_hop_hits): the
         fan can then reach a document that shares no term with the original query.
         hops == 1 (the default) is byte-identical to the single-pass behavior.
         """
+        budget = self._budget(budget_tokens)
         outcome: dict[str, Optional[str]] = {}
-        fused = await self._fan(query, n_results, outcome)
+        fused = await self._fan(query, n_results, outcome, budget)
 
         # MULTI-HOP: fusion reorders a packet; it cannot ADD a document retrieval
         # never returned. A second round can. Off by default (Nano floor).
         hops = max(1, getattr(self._config, "hops", 1))
         if hops > 1 and fused:
-            fused = await self._append_hop_hits(fused, query, n_results, hops)
+            fused = await self._append_hop_hits(fused, query, n_results, hops, budget)
 
         # A core's surroundings: its newest satellites and the core it
         # superseded, which rode along inline on the hit. Appended as MARKED
         # edges right after the ranked packet - they are the story behind a
         # hit, not competitors for its slot. With the edges off the inline
         # content is stripped and only the counts stay on the hit.
-        fused = self._append_satellite_edges(fused)
+        fused = self._append_satellite_edges(fused, budget)
 
         # After the fan: append a small, MARKED addendum of topic-ASSOCIATION
         # edges - entries that share a topic tag with the packet but whose
         # wording put them out of vector reach (the scar). Bounded, deduped
         # against the packet, and only from stores that speak /by_topic.
         if self._config.edges_enabled and self._config.edge_budget > 0:
-            fused = await self._append_topic_edges(fused, query)
+            fused = await self._append_topic_edges(fused, query, budget)
         answered = [n for n, err in outcome.items() if err is None]
         failed = [(n, err) for n, err in outcome.items() if err is not None]
-        return FanReport(hits=fused, answered=answered, failed=failed, skipped=self.skipped)
+        return FanReport(hits=fused, answered=answered, failed=failed, skipped=self.skipped,
+                         budget_tokens=budget, tokens=packet_cost(fused))
+
+    def _budget(self, budget_tokens: Optional[int]) -> Optional[int]:
+        """The page size for one call: the caller's, else the config's default,
+        else None (a row-count packet). A value <= 0 means none."""
+        b = budget_tokens if budget_tokens is not None else getattr(self._config, "budget_tokens", None)
+        return b if b is not None and b > 0 else None
+
+    @staticmethod
+    def _remaining(fused: list[FusedHit], budget: Optional[int]) -> Optional[int]:
+        """Room left on the page after `fused`; None when there is no page."""
+        return None if budget is None else max(0, budget - packet_cost(fused))
 
     async def _fan(self, query: str, n_results: Optional[int] = None,
-                   outcome: Optional[dict[str, Optional[str]]] = None) -> list[FusedHit]:
+                   outcome: Optional[dict[str, Optional[str]]] = None,
+                   budget: Optional[int] = None) -> list[FusedHit]:
         """ONE retrieval round: fan out, floor, fuse. The unit a hop repeats.
         `outcome`, when given, collects each store's result this round: None
-        for answered, the reason for failed."""
+        for answered, the reason for failed. `budget` packs the round to a
+        page (and sizes the ask to fill one) instead of trimming to n."""
         if not self._stores:
             return []
 
         n = n_results if n_results is not None else self._config.n_results
         fetch_n = max(n * self._config.fetch_multiplier, n)
+        if budget is not None:
+            # A page wants enough candidates to fill it, whatever n says.
+            fetch_n = max(fetch_n, -(-budget // _TOKENS_PER_CANDIDATE))
 
         # Fan out in parallel; each _safe_search resolves to (name, hits, error)
         # and never raises (failures become empty lists inside).
@@ -196,10 +232,12 @@ class Federation:
             ranked_lists,
             k=self._config.k,
             weights=weights,
-            n_results=n,
+            # A page replaces the DEFAULT row cap; a caller's explicit n still caps.
+            n_results=n if budget is None else n_results,
             fusion_mode=self._config.fusion_mode,
             authority_margin=self._config.authority_margin,
             min_per_store=self._config.min_per_store,
+            budget_tokens=budget,
         )
 
     def _bridge_query(self, query: str, fused: list[FusedHit]) -> str:
@@ -230,7 +268,8 @@ class Federation:
         return " ".join(parts)
 
     async def _append_hop_hits(self, fused: list[FusedHit], query: str,
-                               n_results: Optional[int], hops: int) -> list[FusedHit]:
+                               n_results: Optional[int], hops: int,
+                               budget: Optional[int] = None) -> list[FusedHit]:
         """Run further retrieval rounds and append what only a HOP could reach.
 
         Each round re-fans an expanded query (original + round-N hit text) and
@@ -242,9 +281,11 @@ class Federation:
         Every hop hit is MARKED (metadata.hop = which round found it, and the
         bridge query that found it), so the briefing stays explainable: you can
         always see why a document is in the packet.
+
+        On a page (`budget`), a hop hit also has to FIT in what is left of it.
         """
-        budget = max(0, self._config.hop_budget)
-        if budget <= 0:
+        room = max(0, self._config.hop_budget)
+        if room <= 0:
             return fused
 
         seen = {f.hit.id for f in fused}
@@ -253,20 +294,24 @@ class Federation:
 
         for hop in range(2, hops + 1):
             bridge = self._bridge_query(query, frontier)
-            more = await self._fan(bridge, n_results)
+            more = await self._fan(bridge, n_results, budget=budget)
             fresh = [f for f in more if f.hit.id not in seen]
             if not fresh:
                 break                              # nothing new: the hop is exhausted, stop early
-            fresh = fresh[:budget]
+            fresh = fresh[:room]
+            if budget is not None:
+                fresh, _ = fit_in_budget(fresh, self._remaining(packet, budget))
+                if not fresh:
+                    break                          # the page is full
             for f in fresh:
                 seen.add(f.hit.id)
                 # Provenance: WHICH round reached this, and via what bridge.
                 f.hit.metadata = {**(f.hit.metadata or {}),
                                   "hop": hop, "hop_bridge": bridge[:120]}
             packet = packet + fresh
-            budget -= len(fresh)
+            room -= len(fresh)
             frontier = fresh
-            if budget <= 0:
+            if room <= 0:
                 break
         return packet
 
@@ -304,7 +349,8 @@ class Federation:
             await self._health.record_failure(name, reason, lat)
             return name, [], reason
 
-    def _append_satellite_edges(self, fused: list[FusedHit]) -> list[FusedHit]:
+    def _append_satellite_edges(self, fused: list[FusedHit],
+                                budget: Optional[int] = None) -> list[FusedHit]:
         """Hang a core's surroundings off the packet as MARKED edges.
 
         Every SerenMemory core hit may carry `surroundings` with `recent`
@@ -315,9 +361,11 @@ class Federation:
         source='satellite-edge' / 'supersedes-edge', `edge_of` naming the core.
         The budget is spent round-robin across the packet's cores in packet
         order, newest satellite first, so one well-evidenced core cannot crowd
-        the rest out. Edges never enter the floor or the fuse."""
+        the rest out. Edges never enter the floor or the fuse. On a page
+        (`budget`) an edge also has to fit in what the packet left of it."""
         enabled = self._config.satellite_edges_enabled and self._config.satellite_budget > 0
-        budget = self._config.satellite_budget if enabled else 0
+        count = self._config.satellite_budget if enabled else 0
+        room = self._remaining(fused, budget)
         seen = {f.hit.id for f in fused}
         queues: list[tuple[FusedHit, list[tuple[str, dict]]]] = []
         for f in fused:
@@ -332,17 +380,17 @@ class Federation:
             if q:
                 queues.append((f, q))
         edges: list[Hit] = []
-        while queues and len(edges) < budget:
+        while queues and len(edges) < count and (room is None or room > 0):
             nxt: list[tuple[FusedHit, list[tuple[str, dict]]]] = []
             for f, q in queues:
-                if len(edges) >= budget:
+                if len(edges) >= count:
                     break
                 kind, r = q.pop(0)
                 rid = str(r.get("id") or "")
                 if rid and rid not in seen:
                     seen.add(rid)
                     core = f.hit
-                    edges.append(Hit(
+                    edge = Hit(
                         store=core.store,
                         id=rid,
                         content=str(r.get("content") or ""),
@@ -359,7 +407,12 @@ class Federation:
                             "source": kind,
                             "edge_of": core.id,
                         },
-                    ))
+                    )
+                    cost = row_cost(edge)
+                    if room is None or cost <= room:
+                        edges.append(edge)
+                        if room is not None:
+                            room -= cost
                 if q:
                     nxt.append((f, q))
             queues = nxt
@@ -383,8 +436,8 @@ class Federation:
         except Exception:  # noqa: BLE001 - a sick store degrades, it doesn't crash the fan
             return name, []
 
-    async def _append_topic_edges(self, fused: list[FusedHit],
-                                  query: str) -> list[FusedHit]:
+    async def _append_topic_edges(self, fused: list[FusedHit], query: str,
+                                  budget: Optional[int] = None) -> list[FusedHit]:
         """Append the bounded, MARKED topic-association addendum to the packet.
 
         Reads the packet's center topics, fires one /by_topic per topic-capable
@@ -395,7 +448,8 @@ class Federation:
         and they ride AFTER the similarity-ranked hits so the ranking stays
         honest. A store without search_by_topic (Loci) is skipped by capability
         check; if nothing's capable or there are no topics, the packet returns
-        untouched."""
+        untouched. On a page (`budget`) an edge also has to fit in what the
+        packet left of it."""
         topics = _collect_topics(fused)
         if not topics:
             return fused
@@ -403,15 +457,17 @@ class Federation:
                    if hasattr(b.adapter, "search_by_topic")]
         if not capable:
             return fused
-        budget = self._config.edge_budget
+        count = self._config.edge_budget
         exclude = [f.hit.id for f in fused]
         results = await asyncio.gather(
-            *(self._safe_topic_search(b, topics, budget, exclude) for b in capable)
+            *(self._safe_topic_search(b, topics, count, exclude) for b in capable)
         )
         edges: list[Hit] = []
         for _name, hits in results:
             edges.extend(hits)
-        edges = edges[:budget]
+        edges = edges[:count]
         edge_fused = [FusedHit(hit=h, rrf_score=0.0, store_rank=i + 1)
                       for i, h in enumerate(edges)]
+        if budget is not None:
+            edge_fused, _ = fit_in_budget(edge_fused, self._remaining(fused, budget))
         return fused + edge_fused

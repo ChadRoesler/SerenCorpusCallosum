@@ -192,6 +192,63 @@ async function loadHealth() {
     } catch (e) { showErr(e.message); }
 }
 
+// ---- knobs ------------------------------------------------------------------
+// Every setting read off in one place: GET /knobs. Three values per knob
+// (live, yaml, default) and the sentence for what it does, so someone who is
+// not Chad can read the fan without opening the yaml or the code.
+function knobVal(v) {
+    if (v === null || v === undefined) return `<span class="knob-none">—</span>`;
+    if (typeof v === "boolean") return v ? "on" : "off";
+    return escapeHtml(String(v));
+}
+function knobRows(rows) {
+    return rows.map(r => {
+        const cls = (r.twiddled ? " twiddled" : "") + (!r.twiddled && r.yaml !== null && r.yaml !== undefined && !r.is_default ? " chosen" : "");
+        const flag = r.twiddled ? `<span class="knob-flag twiddled">twiddled</span>`
+                   : (cls.includes("chosen") ? `<span class="knob-flag chosen">set</span>` : "");
+        const rt = r.runtime_settable ? `<span class="knob-rt" title="can be changed while running, with POST /configure">runtime</span>` : "";
+        return `<tr class="${cls.trim()}">
+            <td class="k">${escapeHtml(r.key)}${rt}</td>
+            <td class="v v-live">${knobVal(r.live)}${flag}</td>
+            <td class="v v-yaml">${knobVal(r.yaml)}</td>
+            <td class="v v-default">${knobVal(r.default)}</td>
+            <td class="w">${escapeHtml(r.what)}</td>
+        </tr>`;
+    }).join("");
+}
+function knobTable(rows) {
+    return `<table class="knob-table"><thead><tr><th>knob</th><th>live</th><th>yaml</th><th>default</th><th>what it does</th></tr></thead>
+        <tbody>${knobRows(rows)}</tbody></table>`;
+}
+async function loadKnobs() {
+    const where = document.getElementById("knobsWhere");
+    const el = document.getElementById("knobsStack");
+    try {
+        const d = await api("/knobs");
+        const w = d.where || {}, sv = d.server || {};
+        where.innerHTML = [
+            `<span><b>yaml</b> ${escapeHtml(w.config_path || "none")}${w.config_exists ? "" : ` <span class="skip">(not on disk: defaults + env)</span>`}</span>`,
+            `<span><b>overlay</b> ${escapeHtml(w.overlay_path || "none")}${w.overlay_exists ? "" : ` <span class="skip">(none yet)</span>`}</span>`,
+            `<span><b>listening</b> ${escapeHtml(sv.host || "")}:${escapeHtml(sv.port || "")} · bearer ${escapeHtml(sv.auth || "open")}</span>`,
+            (w.env_overrides || []).length ? `<span><b>env in effect</b> ${w.env_overrides.map(escapeHtml).join(", ")}</span>` : "",
+        ].filter(Boolean).join("");
+        let html = `<h3 class="group-h">The fan</h3>` + knobTable(d.federation || []);
+        html += `<h3 class="group-h">The stores</h3>`;
+        const stores = d.stores || [];
+        if (!stores.length) html += `<div class="empty">No stores configured.</div>`;
+        for (const s of stores) {
+            const opts = Object.entries(s.options || {});
+            html += `<div class="card knob-store">
+                <div class="nm"><span class="badge ${storeClass(s.name)}">${escapeHtml(s.type)}</span>${escapeHtml(s.name)}
+                    <span class="knob-meta">${escapeHtml(s.url)} · from the ${escapeHtml(s.where)} · bearer ${escapeHtml(s.auth)}</span></div>
+                ${knobTable(s.knobs || [])}
+                ${opts.length ? `<div class="knob-opts"><b>options</b> ${opts.map(([k, v]) => `<span>${escapeHtml(k)} = ${escapeHtml(typeof v === "string" ? v : JSON.stringify(v))}</span>`).join("")}</div>` : ""}
+            </div>`;
+        }
+        el.innerHTML = html;
+    } catch (e) { el.innerHTML = ""; showErr(e.message); }
+}
+
 // ---- overview ---------------------------------------------------------------
 async function loadOverview() {
     try {
@@ -215,6 +272,7 @@ function stat(n, lbl, accent) {
 function switchTab(tab) {
     showTab(tab);
     if (tab === "stores") loadStores();
+    if (tab === "knobs") loadKnobs();
     if (tab === "health") loadHealth();
     if (tab === "overview") loadOverview();
 }
@@ -234,6 +292,7 @@ function reload() {
     const active = document.querySelector(".view.active");
     const id = active ? active.id : "";
     if (id === "stores") loadStores();
+    else if (id === "knobs") loadKnobs();
     else if (id === "health") loadHealth();
     else if (id === "overview") loadOverview();
     else boot();

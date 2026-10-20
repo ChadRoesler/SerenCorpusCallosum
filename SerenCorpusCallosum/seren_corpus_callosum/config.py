@@ -58,6 +58,7 @@ _DEFAULT_SATELLITE_BUDGET = 3    # max satellite / superseded entries appended (
 _DEFAULT_HOPS = 1               # retrieval ROUNDS. 1 = single pass (today). 2 = one hop. Nano pays nothing at 1.
 _DEFAULT_HOP_TERMS = 4          # bridge terms lifted from round-1 to query round-2 (cheap: no LLM in the loop)
 _DEFAULT_HOP_BUDGET = 5         # max hop hits appended (bounded addendum, like edges - never competes for the n_results slots)
+_DEFAULT_BUDGET_TOKENS = None   # default page size in estimated tokens; None = the n_results packet (a caller's budget_tokens always wins)
 
 
 @dataclass
@@ -183,6 +184,10 @@ class FederationConfig:
     hops: int = _DEFAULT_HOPS
     hop_terms: int = _DEFAULT_HOP_TERMS
     hop_budget: int = _DEFAULT_HOP_BUDGET
+    # A PAGE by default: when set, every search that brings no budget_tokens of
+    # its own is packed to this many estimated tokens instead of trimmed to
+    # n_results (see fusion.pack_to_budget). None keeps the row-count packet.
+    budget_tokens: Optional[int] = _DEFAULT_BUDGET_TOKENS
 
     @property
     def enabled_stores(self) -> list[StoreConfig]:
@@ -240,6 +245,7 @@ class FederationConfig:
             hops=max(1, int(d.get("hops", _DEFAULT_HOPS))),          # < 1 is meaningless; clamp, never crash
             hop_terms=int(d.get("hop_terms", _DEFAULT_HOP_TERMS)),
             hop_budget=int(d.get("hop_budget", _DEFAULT_HOP_BUDGET)),
+            budget_tokens=int(d["budget_tokens"]) if d.get("budget_tokens") else _DEFAULT_BUDGET_TOKENS,
         )
 
     @classmethod
@@ -316,6 +322,9 @@ class CorpusCallosumConfig:
     # Where UI-added stores persist (the runtime overlay). Set by load_config;
     # the POST/DELETE /stores handlers write here.
     runtime_stores_path: Optional[str] = None
+    # The yaml load_config read (or would have read): GET /knobs reads it
+    # again to show what comes back after a restart beside what runs now.
+    config_path: Optional[str] = None
 
 
 def _apply_env_overrides(cfg: "CorpusCallosumConfig") -> "CorpusCallosumConfig":
@@ -383,5 +392,6 @@ def load_config(path: Optional[str] = None) -> "CorpusCallosumConfig":
         updates=UpdatesConfig.from_dict(data.get("updates")),
         federation=fed,
         runtime_stores_path=str(overlay_file),
+        config_path=str(cfg_path),
     )
     return _apply_env_overrides(cfg)

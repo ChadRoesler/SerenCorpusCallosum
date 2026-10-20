@@ -24,7 +24,7 @@ coroutine tools, so the decoration is identical to a sync tool's.
 """
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 from mcp.server.fastmcp import FastMCP
 
@@ -40,7 +40,8 @@ class SccToolImpl:
     def __init__(self, federation: "Federation") -> None:
         self.federation = federation
 
-    async def search(self, query: str, n_results: int = 10) -> dict:
+    async def search(self, query: str, n_results: Optional[int] = None,
+                     budget_tokens: Optional[int] = None) -> dict:
         """Search ALL of Seren's memory in one call. THE FIRST PLACE TO LOOK
         whenever you need to remember something: call this before `recall` or
         `search_loci`, and drill into one of those only when this packet is
@@ -65,8 +66,15 @@ class SccToolImpl:
         store degrades the result, it never takes the call down. A core hit
         carries `surroundings` (satellite count, what it superseded); its
         newest satellites ride after the packet as `satellite-edge` hits.
+
+        `n_results` caps the rows (the callosum's default when left out).
+        `budget_tokens` makes the packet a PAGE instead: packed to that many
+        estimated tokens of text, the edges packed into what is left of it.
+        Say how much you can read and the packet fills exactly that; the
+        reply's `tokens` is what it cost.
         """
-        report = await self.federation.search_report(query, n_results=n_results)
+        report = await self.federation.search_report(query, n_results=n_results,
+                                                     budget_tokens=budget_tokens)
         fused = report.hits
         return {
             "query": query,
@@ -84,6 +92,8 @@ class SccToolImpl:
                 }
                 for f in fused
             ],
+            "budget_tokens": report.budget_tokens,
+            "tokens": report.tokens,
             "stores_searched": report.answered,
             "failed": [{"name": n, "reason": r} for n, r in report.failed],
             "skipped": [{"name": n, "reason": r} for n, r in report.skipped],

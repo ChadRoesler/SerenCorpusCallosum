@@ -69,6 +69,9 @@ async def configure(request: Request, params: ConfigureRequest = Body(...)) -> d
         cfg.n_results = params.n_results
     if params.fetch_multiplier is not None:
         cfg.fetch_multiplier = params.fetch_multiplier
+    if params.budget_tokens is not None:
+        # 0 clears the default page; searches go back to the n_results packet.
+        cfg.budget_tokens = params.budget_tokens if params.budget_tokens > 0 else None
     if params.per_store_timeout_s is not None:
         cfg.per_store_timeout_s = params.per_store_timeout_s
         # The fan's wait_for reads the config live; the httpx client does not.
@@ -124,6 +127,8 @@ async def configure(request: Request, params: ConfigureRequest = Body(...)) -> d
         changed["n_results"] = cfg.n_results
     if params.fetch_multiplier is not None:
         changed["fetch_multiplier"] = cfg.fetch_multiplier
+    if params.budget_tokens is not None:
+        changed["budget_tokens"] = cfg.budget_tokens
     if params.per_store_timeout_s is not None:
         changed["per_store_timeout_s"] = cfg.per_store_timeout_s
     if params.hops is not None:

@@ -40,14 +40,15 @@ class FakeFederation:
         self.skipped = skipped
         self.last_call = None
 
-    async def search(self, query, n_results=None):
-        self.last_call = (query, n_results)
+    async def search(self, query, n_results=None, budget_tokens=None):
+        self.last_call = (query, n_results, budget_tokens)
         return self._fused
 
-    async def search_report(self, query, n_results=None):
+    async def search_report(self, query, n_results=None, budget_tokens=None):
         from seren_corpus_callosum.federation import FanReport
-        return FanReport(hits=await self.search(query, n_results), answered=list(self.store_names),
-                         failed=[], skipped=list(self.skipped))
+        return FanReport(hits=await self.search(query, n_results, budget_tokens),
+                         answered=list(self.store_names), failed=[], skipped=list(self.skipped),
+                         budget_tokens=budget_tokens)
 
 
 def test_search_tool_returns_full_provenance():
@@ -61,7 +62,7 @@ def test_search_tool_returns_full_provenance():
     )
     out = asyncio.run(SccToolImpl(fed).search("q", n_results=5))
     assert out["query"] == "q"
-    assert fed.last_call == ("q", 5)             # n_results threaded through
+    assert fed.last_call == ("q", 5, None)       # n_results threaded through
     assert out["stores_searched"] == ["mem", "loci"]
     assert [h["store"] for h in out["hits"]] == ["mem", "loci"]
     h0 = out["hits"][0]
@@ -81,7 +82,7 @@ def test_search_tool_surfaces_skipped():
 def test_search_tool_default_n_results():
     fed = FakeFederation(fused=[], store_names=[], skipped=[])
     asyncio.run(SccToolImpl(fed).search("q"))
-    assert fed.last_call == ("q", 10)            # tool's own default
+    assert fed.last_call == ("q", None, None)    # no cap of its own: the callosum's default applies
 
 
 def test_register_tools_attaches_search():

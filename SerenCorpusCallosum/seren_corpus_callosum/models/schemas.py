@@ -20,6 +20,12 @@ class SearchRequest(BaseModel):
     query: str
     # None -> use the federation's configured default n_results.
     n_results: Optional[int] = None
+    # A PAGE, not a list: pack the packet to this many estimated tokens (four
+    # characters each, counted on the text a row puts in front of the reader)
+    # instead of trimming it to a row count; the edges and hop hits are packed
+    # into what is left of the page. None -> the federation's default budget,
+    # which is none unless configured. n_results beside a budget still caps rows.
+    budget_tokens: Optional[int] = Field(default=None, ge=1)
 
 
 class StoreCreate(BaseModel):
@@ -71,6 +77,9 @@ class ConfigureRequest(BaseModel):
     n_results: Optional[int] = None
     fetch_multiplier: Optional[int] = None
     per_store_timeout_s: Optional[float] = None
+    # The default page size for searches that bring no budget_tokens of their
+    # own; 0 clears it (back to the n_results packet).
+    budget_tokens: Optional[int] = None
 
     # MULTI-HOP retrieval. hops=1 (default) is a single pass and costs nothing;
     # hops=2 runs a second round against a query EXPANDED with round-1 hit text,
@@ -104,6 +113,8 @@ class FailedStore(BaseModel):
 class SearchResponse(BaseModel):
     query: str
     hits: list[FusedHitOut]
+    budget_tokens: Optional[int] = None     # the page size this packet was packed to, if any
+    tokens: int = 0                         # the packet's estimated cost to the reader
     stores_searched: list[str]              # the stores that ANSWERED this call (empty is an answer)
     failed: list[FailedStore] = Field(default_factory=list)   # fanned, did not answer, and why
     skipped: list[SkippedStore] = Field(default_factory=list)  # never bound (config error)

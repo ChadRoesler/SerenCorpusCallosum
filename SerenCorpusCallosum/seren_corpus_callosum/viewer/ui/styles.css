@@ -46,8 +46,8 @@ a {
     text-decoration: none;
 }
 
+/* page padding is the shell's .view (22px), the same on every viewer (20 Oct 2026) */
 main {
-    padding: 20px 24px 60px;
     max-width: 1100px;
 }
 
@@ -411,3 +411,38 @@ label.chk {
 .h-status.healthy { color: var(--good); }
 .h-status.degraded { color: var(--gold); }
 .h-status.unhealthy { color: var(--bad); }
+
+/* knobs: every setting read off in one place (20 Oct 2026) */
+.knobs-where {
+    display: flex; flex-wrap: wrap; gap: 6px 18px; margin-bottom: 14px;
+    font-family: var(--mono); font-size: 12px; color: var(--muted); word-break: break-all;
+}
+    .knobs-where b { color: var(--faint); font-weight: 600; margin-right: 4px; }
+.knob-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 14px; }
+    .knob-table th {
+        text-align: left; font-family: var(--mono); font-size: 11px; font-weight: 500;
+        color: var(--faint); padding: 6px 8px; border-bottom: 1px solid var(--line);
+    }
+    .knob-table td { padding: 7px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+    .knob-table tr:last-child td { border-bottom: none; }
+    .knob-table td.k { font-family: var(--mono); color: var(--accent); white-space: nowrap; }
+    .knob-table td.v { font-family: var(--mono); white-space: nowrap; color: var(--muted); }
+    .knob-table td.v-live { color: var(--text); }
+    .knob-table td.w { color: var(--muted); font-size: 12.5px; line-height: 1.45; }
+    .knob-table tr.twiddled td.v-live { color: var(--gold); font-weight: 600; }
+    .knob-table tr.chosen td.v-live { color: var(--text); font-weight: 600; }
+    .knob-none { color: var(--faint); }
+.knob-flag {
+    display: inline-block; margin-left: 8px; padding: 1px 7px; border-radius: 999px;
+    border: 1px solid; font-family: var(--mono); font-size: 10px; vertical-align: middle;
+}
+    .knob-flag.twiddled { color: var(--gold); border-color: #6b5a2c; }
+    .knob-flag.chosen { color: var(--muted); border-color: var(--line); }
+.knob-rt {
+    display: inline-block; margin-left: 6px; font-family: var(--mono); font-size: 10px;
+    color: var(--faint); border: 1px dashed var(--line); border-radius: 999px; padding: 0 6px;
+}
+.knob-store .nm { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; font-weight: 600; }
+    .knob-store .knob-meta { font-family: var(--mono); font-size: 11px; color: var(--faint); font-weight: 400; word-break: break-all; }
+.knob-opts { font-family: var(--mono); font-size: 11px; color: var(--muted); display: flex; gap: 12px; flex-wrap: wrap; }
+    .knob-opts b { color: var(--faint); }

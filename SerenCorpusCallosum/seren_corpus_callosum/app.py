@@ -35,6 +35,7 @@ from .routes import search as search_routes
 from .routes import stores as stores_routes
 from .routes import health as health_routes
 from .routes import configure as configure_routes
+from .routes import knobs as knobs_routes
 from .health import HealthTracker
 from seren_meninges import get_version
 from seren_meninges.updates import updates_payload
@@ -202,5 +203,6 @@ def create_app(config: CorpusCallosumConfig | None = None, transport=None) -> Fa
     app.include_router(stores_routes.router)
     app.include_router(health_routes.router)
     app.include_router(configure_routes.router)
+    app.include_router(knobs_routes.router)
 
     return app

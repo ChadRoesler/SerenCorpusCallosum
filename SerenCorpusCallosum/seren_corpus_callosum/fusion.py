@@ -93,6 +93,100 @@ class FusedHit:
     store_rank: int                  # 1-based rank within its own store (provenance / explainability)
 
 
+# A PAGE, NOT A LIST. The reader of a packet is a model with a context budget:
+# it reads some number of tokens, not some number of rows. When a caller says
+# how much it can read, the trim is that budget instead of a row count, and a
+# row's COST enters the packing - ten 150-token cores interleaved by rank with
+# 30-token one-liners otherwise fill a 1,000-token page before the other
+# store's third hit (Probe's harness, 20 Oct 2026: the mechanism behind both
+# 'Memory crowds out' and 'Loci crowds out'). Four characters per token is the
+# estimate the whole family uses; the count is of the text a row puts in front
+# of the reader, not of the JSON around it.
+_CHARS_PER_TOKEN = 4
+_ROW_OVERHEAD_TOKENS = 1
+
+
+def est_tokens(text: Optional[str]) -> int:
+    """Tokens a piece of text costs the reader, estimated. Never below 1."""
+    return max(1, (len(text or "") + _CHARS_PER_TOKEN - 1) // _CHARS_PER_TOKEN)
+
+
+def row_cost(hit: Hit) -> int:
+    """What ONE row puts in front of the reader: its content, plus the text of
+    the satellite it matched through when Memory lifted a core in on the
+    strength of an episode (that text rides on the hit as matched_via, and the
+    reader gets it too)."""
+    cost = est_tokens(hit.content) + _ROW_OVERHEAD_TOKENS
+    via = (hit.metadata or {}).get("matched_via")
+    if isinstance(via, dict) and via.get("content"):
+        cost += est_tokens(str(via["content"]))
+    return cost
+
+
+def packet_cost(fused: list[FusedHit]) -> int:
+    """The whole packet's estimated cost to the reader."""
+    return sum(row_cost(f.hit) for f in fused)
+
+
+def fit_in_budget(fused: list[FusedHit], remaining: int) -> tuple[list[FusedHit], int]:
+    """Keep, in order, every row that still fits in `remaining` tokens. A row
+    that does not fit is skipped, not a stop, so a cheap row behind an
+    expensive one still gets its seat. Returns the kept rows and what is left."""
+    kept: list[FusedHit] = []
+    for f in fused:
+        if remaining <= 0:
+            break
+        cost = row_cost(f.hit)
+        if cost <= remaining:
+            kept.append(f)
+            remaining -= cost
+    return kept, remaining
+
+
+def pack_to_budget(fused: list[FusedHit], budget_tokens: int, min_per_store: int,
+                   n_results: Optional[int] = None) -> list[FusedHit]:
+    """Fill a page of `budget_tokens` from the fused order: the budget-shaped
+    twin of _trim_with_quota.
+
+    Reserve phase first, as in the row-count trim: each contributing store gets
+    up to min_per_store of its best rows THAT FIT, so the diversity floor acts
+    on the head of the page the reader sees, not on a tail below a row count
+    the reader never reaches (why min_per_store moved nothing in 1,152
+    combinations on five corpora). Fill phase then walks the fused order and
+    seats every row that still fits; a row too big for what is left is skipped
+    and the walk goes on, so one fat core cannot end the page with room to
+    spare. n_results, when given as well, is a second cap on the row count.
+    Emitted in fused order, so the authority lead still leads."""
+    cap = n_results if n_results is not None and n_results > 0 else len(fused)
+    chosen: set[int] = set()
+    used = 0
+    reserved: dict[str, int] = {}
+    if min_per_store > 0:
+        for i, f in enumerate(fused):
+            if len(chosen) >= cap:
+                break
+            c = reserved.get(f.hit.store, 0)
+            if c >= min_per_store:
+                continue
+            cost = row_cost(f.hit)
+            if used + cost > budget_tokens:
+                continue                    # the seat goes to this store's next row that fits
+            chosen.add(i)
+            used += cost
+            reserved[f.hit.store] = c + 1
+    for i, f in enumerate(fused):
+        if len(chosen) >= cap:
+            break
+        if i in chosen:
+            continue
+        cost = row_cost(f.hit)
+        if used + cost > budget_tokens:
+            continue
+        chosen.add(i)
+        used += cost
+    return [fused[i] for i in sorted(chosen)]
+
+
 def base_relevance_from_distance(distance: float) -> float:
     """The one relevance transform both SerenMemory and Loci already use:
     base = 1 / (1 + distance). Monotonic in distance, lands in (0, 1].
@@ -271,6 +365,7 @@ def rrf_fuse(
     fusion_mode: str = "rrf",
     authority_margin: float = 0.0,
     min_per_store: int = 1,
+    budget_tokens: Optional[int] = None,
 ) -> list[FusedHit]:
     """Interleave independent stores' ranked lists by Reciprocal Rank Fusion.
 
@@ -300,6 +395,11 @@ def rrf_fuse(
             its top hits survive the n_results trim - the packet's diversity
             floor (a fact AND a scar). 1 (default) seats every answering store
             when n allows; 0 disables (pure top-n trim). See _trim_with_quota.
+        budget_tokens: > 0 makes the packet a PAGE: packed to this many
+            estimated tokens (see pack_to_budget) instead of trimmed to a row
+            count, with min_per_store seating each store on the page and a
+            row's cost deciding what fits. n_results given beside it is a
+            second cap on the rows. None/0 keeps the row-count trim.
 
     Returns:
         FusedHits sorted by rrf_score descending. Ties (a store's rank-i vs
@@ -363,6 +463,8 @@ def rrf_fuse(
     # min_per_store seats (the packet stays a diverse briefing, not all-one-class).
     # min_per_store<=0 makes this a plain top-n trim, and the equal-weight case is
     # a no-op since RRF already interleaved the stores.
-    if n_results is not None:
+    if budget_tokens is not None and budget_tokens > 0:
+        fused = pack_to_budget(fused, budget_tokens, min_per_store, n_results)
+    elif n_results is not None:
         fused = _trim_with_quota(fused, n_results, min_per_store)
     return fused

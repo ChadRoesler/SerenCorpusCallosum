@@ -92,6 +92,7 @@ federation:
   authority_margin: 0.035 # a store clearly confident in its top hit leads the packet; 0 disables
   min_per_store: 1        # each answering store keeps at least this many seats through the trim; 0 disables
   n_results: 10           # merged hits returned by default
+  budget_tokens: null     # a default PAGE size in estimated tokens; set, every search is packed to it instead of trimmed to n_results
   fetch_multiplier: 2     # over-fetch per store (clamped to what the store accepts: Memory takes at most 50)
   per_store_timeout_s: 5.0
   edges_enabled: true     # topic-association edges after the packet (Memory's /by_topic)
@@ -128,6 +129,15 @@ POST /search
 { "query": "that CUDA thing on the Xavier", "n_results": 10 }
 ```
 
+Or ask for a **page** instead of a list. The reader of a packet is a model with a context budget: it reads tokens, not rows.
+
+```http
+POST /search
+{ "query": "that CUDA thing on the Xavier", "budget_tokens": 1000 }
+```
+
+With `budget_tokens` the packet is packed to that many estimated tokens (four characters each, counted on the text a row puts in front of the reader: its content and the satellite it matched through) instead of trimmed to a row count. The per-store ask is sized to fill the page; `min_per_store` seats each store on the page the reader actually sees rather than on a tail below a row count; a row too big for what is left is skipped, not a stop; and the satellite edges, topic edges and hop hits are packed into what is left of the page rather than appended past the trim. `n_results` beside a budget is a second cap on the rows. The response says `budget_tokens` (the page it was packed to, `null` for a row-count packet) and `tokens` (what the packet is estimated to cost, reported either way). Set `federation.budget_tokens` to make every search a page by default; a call's own value always wins.
+
 Every hit comes back with full provenance, so the merge is explainable rather than a black box:
 
 ```json
@@ -143,6 +153,8 @@ Every hit comes back with full provenance, so the merge is explainable rather th
       "metadata": {}
     }
   ],
+  "budget_tokens": null,
+  "tokens": 212,
   "stores_searched": ["facts", "episodic"],
   "failed": [],
   "skipped": []
@@ -189,6 +201,7 @@ POST /configure
   "satellite_edges_enabled": true,
   "satellite_budget": 3,
   "n_results": 25,
+  "budget_tokens": 1000,
   "fetch_multiplier": 4,
   "per_store_timeout_s": 10.0,
   "stores": [
@@ -197,7 +210,7 @@ POST /configure
 }
 ```
 
-All fields are optional - only supplied fields are changed. The live Federation is
+All fields are optional - only supplied fields are changed (`budget_tokens: 0` clears the default page). The live Federation is
 rebuilt immediately so the next `/search` picks up the new values. Per-store
 overrides mutate `weight`/`floor` on matching stores; an unknown store name
 returns 404, an invalid `fusion_mode` returns 422.

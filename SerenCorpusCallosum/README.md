@@ -36,7 +36,7 @@ The `Federation` class owns the fan-out. On a search request it:
 3. **Ranks** - sorts each store's survivors by native score descending, assigns rank order.
 4. **Fuses** - applies RRF across all stores: `Σ weight / (k + rank_in_store)`.
 5. **Applies authority margin** - if `authority_margin > 0`, an exact-key hit (native_score = 1.0) gets boosted above the #1 RRF-ranked result by that margin.
-6. **Truncates** - returns the top `n_results`.
+6. **Truncates** - returns the top `n_results`; or, with `budget_tokens` (the request's, else `federation.budget_tokens`), **packs a page**: every row that fits in that many estimated tokens, in fused order, `min_per_store` seating each store on the page, an oversize row skipped rather than ending the page, and the edges and hop hits below packed into what is left. The response reports `budget_tokens` and the packet's estimated `tokens`.
 
 A slow or down store degrades the result but never takes the call down with it - and the response says so: `stores_searched` is the stores that answered (an empty answer counts), `failed` names each store that was fanned and did not answer with why (timeout, refused, an HTTP error), and `skipped` is a store that was never bound (a config error). A timeout and "knows nothing" are different facts.
 
@@ -84,6 +84,7 @@ POST /configure
   "edges_enabled": false,
   "edge_budget": 0,
   "n_results": 25,
+  "budget_tokens": 1000,
   "fetch_multiplier": 4,
   "per_store_timeout_s": 10.0,
   "stores": [

@@ -20,7 +20,8 @@ router = APIRouter(tags=["search"])
 @router.post("/search")
 async def search(request: Request, req: SearchRequest = Body(...)) -> SearchResponse:
     fed = request.app.state.federation
-    report = await fed.search_report(req.query, n_results=req.n_results)
+    report = await fed.search_report(req.query, n_results=req.n_results,
+                                     budget_tokens=req.budget_tokens)
     fused = report.hits
     hits = [
         FusedHitOut(
@@ -39,6 +40,8 @@ async def search(request: Request, req: SearchRequest = Body(...)) -> SearchResp
     return SearchResponse(
         query=req.query,
         hits=hits,
+        budget_tokens=report.budget_tokens,
+        tokens=report.tokens,
         stores_searched=report.answered,
         failed=[FailedStore(name=n, reason=r) for n, r in report.failed],
         skipped=[SkippedStore(name=n, reason=r) for n, r in report.skipped],

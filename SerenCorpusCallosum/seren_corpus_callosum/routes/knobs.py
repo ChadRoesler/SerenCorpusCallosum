@@ -5,7 +5,7 @@ seren_corpus_callosum.routes.knobs
     GET /knobs - every setting the callosum runs with, read off in one place,
                  each with the plain words for what it does.
 
-Chad, 20 Oct 2026: "for the callosum, a way to view what the settings for
+20 Oct 2026: "for the callosum, a way to view what the settings for
 stores, the knobs that get twiddled, so it's easy for someone who isn't me to
 be able to read off what they are without having to dig."
 
@@ -37,7 +37,7 @@ router = APIRouter(tags=["knobs"])
 
 # The federation knobs, in the order someone tuning the fan meets them: what
 # comes back, how it is merged, what is added after the merge, the second
-# round. `what` is the sentence for someone who is not Chad.
+# round. `what` is the sentence for someone who is not the author.
 FEDERATION_KNOBS: list[tuple[str, Any, str]] = [
     ("n_results", _DEFAULT_N_RESULTS,
      "How many merged hits a search returns when the caller does not say."),

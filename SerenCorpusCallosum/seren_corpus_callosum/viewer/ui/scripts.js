@@ -195,7 +195,7 @@ async function loadHealth() {
 // ---- knobs ------------------------------------------------------------------
 // Every setting read off in one place: GET /knobs. Three values per knob
 // (live, yaml, default) and the sentence for what it does, so someone who is
-// not Chad can read the fan without opening the yaml or the code.
+// not the author can read the fan without opening the yaml or the code.
 function knobVal(v) {
     if (v === null || v === undefined) return `<span class="knob-none">—</span>`;
     if (typeof v === "boolean") return v ? "on" : "off";

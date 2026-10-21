@@ -1,5 +1,5 @@
 """
-GET /knobs and the viewer's Knobs tab (20 Oct 2026). Chad: "a way to view
+GET /knobs and the viewer's Knobs tab (20 Oct 2026). The ask: "a way to view
 what the settings for stores, the knobs that get twiddled, so it's easy for
 someone who isn't me to be able to read off what they are without having to
 dig."

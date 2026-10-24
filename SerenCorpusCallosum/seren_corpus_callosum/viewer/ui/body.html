@@ -81,3 +81,34 @@
         result, it never takes the fan down.
     </p>
 </section>
+
+<!-- SKY (23 Oct 2026): both hemispheres in one picture. Loci's city on the
+     ground, Memory's nebula as its night sky, and the callosum between them:
+     ask, and light runs from the facts below to the memories above that
+     answer. Fixed under the tab bar; the controls, the answer and the chosen
+     thing float over it. -->
+<section class="view" id="sky">
+    <div id="sky-wrap">
+        <div id="sky-canvas"></div>
+        <div class="sky-controls">
+            <input type="search" id="sky-q" placeholder="ask both halves…" aria-label="Ask the callosum" />
+            <button class="sky-btn ask" id="sky-ask">ask</button>
+            <label class="sky-check"><input type="checkbox" id="sky-drift" checked /> drift</label>
+            <label class="sky-check"><input type="checkbox" id="sky-snow" checked /> snow</label>
+            <label class="sky-check"><input type="checkbox" id="sky-ways" checked /> skyways</label>
+            <label class="sky-check"><input type="checkbox" id="sky-lines" checked /> constellations</label>
+            <button class="sky-btn" id="sky-fit" title="The whole sky">⌖</button>
+        </div>
+        <div class="sky-legend">
+            <div class="sky-stats" id="sky-stats"></div>
+            <div><i class="lg-tower"></i>below: the facts, a tower per project</div>
+            <div><i class="lg-star"></i>above: the memories, placed by meaning</div>
+            <div><i class="lg-way"></i>skyway: a fact rests on another</div>
+            <div><i class="lg-beam"></i>ask, and light runs between the answers</div>
+        </div>
+        <div class="sky-answer" id="sky-answer" hidden></div>
+        <div class="sky-tip" id="sky-tip" hidden></div>
+        <div class="sky-info" id="sky-info" hidden></div>
+        <div class="sky-loading" id="sky-loading">raising the city…</div>
+    </div>
+</section>

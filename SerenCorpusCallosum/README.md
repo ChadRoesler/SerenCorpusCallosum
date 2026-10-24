@@ -97,6 +97,25 @@ All fields are optional - only supplied fields are changed. The live Federation 
 
 ---
 
+## The Sky
+
+The viewer's **Sky** tab puts both hemispheres in one picture. Loci's city is
+on the ground: a tower per project, a floor per fact, and skyways where one
+fact rests on another. Memory's nebula is its night sky: every core and
+satellite, placed by what it means. `GET /sky` (read-only) fetches the two maps
+through the stores this callosum already fans, with their own bearers: Loci's
+`GET /city` and Memory's `GET /long/map`, the first enabled store of each kind.
+A store that can't be reached leaves its half empty and `failed` says why.
+
+The Sky also does what the callosum does. Ask a question and it runs the same
+`/search` as the Search tab: the facts that answer light up in the city, the
+memories that answer flare in the sky, and light runs between every fact and
+every memory in the answer. Short- and near-term hits aren't in the sky, and
+the answer says how many there were. Its 3D library (three.js r159, MIT) is
+vendored in `viewer/vendor/` and served under `/viewer/` like the page.
+
+---
+
 ## Tests
 
 | Test file | What it covers |

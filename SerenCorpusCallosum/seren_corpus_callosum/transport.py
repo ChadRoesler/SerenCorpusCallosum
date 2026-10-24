@@ -69,3 +69,17 @@ class HttpTransport:
         resp = await self._client.post(url, json=payload, headers=headers)
         resp.raise_for_status()
         return resp.json()
+
+    async def get_json(self, url: str, headers: Optional[dict[str, str]] = None,
+                       timeout: Optional[float] = None) -> dict[str, Any]:
+        """A GET for the reads that are not searches (the Sky's two maps), with
+        a timeout of its own: a map is one read of a whole store."""
+        t = self._httpx.Timeout(timeout or self._timeout)
+        if self._client is None:
+            async with self._httpx.AsyncClient(timeout=t) as client:
+                resp = await client.get(url, headers=headers)
+                resp.raise_for_status()
+                return resp.json()
+        resp = await self._client.get(url, headers=headers, timeout=t)
+        resp.raise_for_status()
+        return resp.json()

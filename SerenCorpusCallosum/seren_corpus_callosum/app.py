@@ -36,6 +36,7 @@ from .routes import stores as stores_routes
 from .routes import health as health_routes
 from .routes import configure as configure_routes
 from .routes import knobs as knobs_routes
+from .routes import sky as sky_routes
 from .health import HealthTracker
 from seren_meninges import get_version
 from seren_meninges.updates import updates_payload
@@ -198,11 +199,26 @@ def create_app(config: CorpusCallosumConfig | None = None, transport=None) -> Fa
         )
         return HTMLResponse(html)
 
+    # The Sky's 3D library (three.js r159, MIT, vendored so the viewer works on
+    # a LAN with no internet; 23 Oct 2026). Under /viewer/, so public like the
+    # page itself (Meninges treats /viewer/... as public): it is a library, no data.
+    _VENDOR = {"three.min.js"}
+
+    @app.get("/viewer/vendor/{name}")
+    async def viewer_vendor(name: str):
+        from fastapi import HTTPException
+        from fastapi.responses import FileResponse
+        if name not in _VENDOR:
+            raise HTTPException(404, "no such file")
+        return FileResponse(Path(__file__).parent / "viewer" / "vendor" / name,
+                            media_type="text/javascript", headers={"Cache-Control": "private, max-age=86400"})
+
     # -- The fan + introspection --
     app.include_router(search_routes.router)
     app.include_router(stores_routes.router)
     app.include_router(health_routes.router)
     app.include_router(configure_routes.router)
     app.include_router(knobs_routes.router)
+    app.include_router(sky_routes.router)
 
     return app

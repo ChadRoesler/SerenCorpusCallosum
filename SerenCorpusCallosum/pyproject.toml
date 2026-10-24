@@ -110,7 +110,7 @@ include = ["seren_corpus_callosum*"]
 # pip-strips-non-.py gotcha as the family - without this, GET /viewer renders an
 # empty shell on an installed copy.
 [tool.setuptools.package-data]
-seren_corpus_callosum = ["viewer/ui/*.html", "viewer/ui/*.css", "viewer/ui/*.js"]
+seren_corpus_callosum = ["viewer/ui/*.html", "viewer/ui/*.css", "viewer/ui/*.js", "viewer/vendor/*.js", "viewer/vendor/*.txt"]
 
 [tool.setuptools_scm]
 # .git is one level above pyproject.toml (repo root)

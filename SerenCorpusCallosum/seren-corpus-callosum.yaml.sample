@@ -87,7 +87,7 @@ federation:
 
     # The gift, in config form - spin up a dedicated memory for a project and fan it in,
     # same adapter, zero new code:
-    # - name: rhys
+    # - name: bob
     #   type: seren_memory
     #   url: http://localhost:7430
 

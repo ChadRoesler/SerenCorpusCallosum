@@ -31,7 +31,7 @@ dependencies = [
     # version helper, the auth middleware, the viewer baseplate. Pinned <1 - a
     # MAJOR (an un-defaultable security change) is the only thing that ever
     # forces a bump here.
-    "seren-meninges>=2.4.0,<6",
+    "seren-meninges>=6.0.0,<7",
     # Shared request logging - one copy across the family (SerenSinew). Mounted
     # outermost (before auth) so even 401s get logged. -> corpus-callosum-requests.log.
     "seren-sinew>=1.0.0,<6",

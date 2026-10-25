@@ -1,11 +1,7 @@
+/* buttons (.btn, .btn.primary ...) and fields come from the shell (seren_meninges tokens.css, 24 Oct 2026) */
 :root {
-    --bg: #14141f;
-    --bg-2: #1a1a2e;
-    --panel: #1f2036;
-    --panel-2: #262844;
-    --line: #33365a;
-    --muted: #9aa0c8;
-    --faint: #6c7199;
+    /* the walls (--bg, --bg-2, --panel, --panel-2, --line, --muted, --faint)
+       come from the shell, tinted 5% by this service's accent (24 Oct 2026) */
     /* --accent (violet) comes from the shell (render_from_dir accent=#9d7cff),
        so it's NOT redefined here - the baseplate owns it. Body text is --text
        and the base font is --font (both shell tokens), used directly below. */
@@ -60,40 +56,10 @@ main {
     margin-bottom: 14px;
 }
 
-input, select {
-    background: var(--bg-2);
-    border: 1px solid var(--line);
-    color: var(--text);
-    border-radius: 8px;
-    padding: 9px 11px;
-    font-size: 13px;
-    font-family: var(--font);
-}
-
-    input:focus, select:focus {
-        outline: none;
-        border-color: var(--accent-dim);
-    }
-
     input.q {
         flex: 1;
         min-width: 240px;
         font-family: var(--mono);
-    }
-
-.btn {
-    background: var(--accent);
-    color: #160d2e;
-    border: none;
-    border-radius: 8px;
-    padding: 9px 16px;
-    font-weight: 600;
-    cursor: pointer;
-    font-size: 13px;
-}
-
-    .btn:hover {
-        filter: brightness(1.08);
     }
 
 label.chk {

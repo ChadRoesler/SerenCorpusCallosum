@@ -329,7 +329,7 @@ const SKY = {
     lib: null, built: false, running: false, last: 0, t: 0, fitted: false,
     renderer: null, scene: null, camera: null, world: null, data: null,
     floors: [], meshes: [], byAddr: new Map(), ways: [], walkers: [], beacons: [], snow: null,
-    stars: [], starById: new Map(), pickables: [], satPoints: null, skyLines: null, beams: null, beamRiders: [],
+    stars: [], starById: new Map(), pickables: [], satMesh: null, skyLines: null, beams: null, beamRiders: [],
     extent: 200, height: 100, skyY: 300,
     orbit: { x: 0, y: 80, z: 0, r: 900, th: 0.75, ph: 1.22 },
     goal: { x: 0, y: 80, z: 0, r: 900, th: 0.75, ph: 1.22 },
@@ -458,6 +458,18 @@ function twinkleStars(c, stars) {
             }
             x.globalAlpha = s.a * k;
             x.beginPath(); x.arc(s.x, s.y, s.r, 0, 2 * Math.PI); x.fill();
+            // the points: a star that twinkles throws four thin rays, longest
+            // when it is brightest (24 Oct 2026, as on Memory's Stars)
+            if (s.spike) {
+                const len = s.r * (2.5 + 7 * k * k);
+                x.globalAlpha = s.a * k * k * 0.75;
+                x.strokeStyle = s.col;
+                x.lineWidth = 0.7;
+                x.beginPath();
+                x.moveTo(s.x - len, s.y); x.lineTo(s.x + len, s.y);
+                x.moveTo(s.x, s.y - len); x.lineTo(s.x, s.y + len);
+                x.stroke();
+            }
         }
         x.globalAlpha = 1;
     };
@@ -477,6 +489,7 @@ function starField(n, w, h, yOf = () => Math.random() * h) {
     for (let i = 0; i < n; i++) {
         const big = Math.random() < 0.06, warm = Math.random() < 0.12, lively = Math.random() < 0.15;
         out.push({ x: Math.random() * w, y: yOf(), r: big ? 1.1 + Math.random() * 0.9 : 0.3 + Math.random() * 0.7,
+                   spike: big || (lively && Math.random() < 0.5),
                    col: warm ? '#ffd6aa' : '#d2e1ff', a: warm ? 0.35 + Math.random() * 0.5 : 0.2 + Math.random() * 0.6,
                    amp: lively ? 0.55 + Math.random() * 0.4 : 0.1 + Math.random() * 0.2,
                    sp: 0.6 + Math.random() * 1.8, ph: Math.random() * 6.283 });
@@ -516,7 +529,7 @@ function skyWorld(data) {
     if (SKY.world) { SKY.scene.remove(SKY.world); SKY.world.traverse(o => { o.geometry && o.geometry.dispose(); }); }
     const world = new THREE.Group();
     Object.assign(SKY, { world, floors: [], meshes: [], byAddr: new Map(), ways: [], walkers: [], beacons: [],
-                         stars: [], starById: new Map(), pickables: [], beams: null, beamRiders: [] });
+                         stars: [], starById: new Map(), pickables: [], satMesh: null, beams: null, beamRiders: [] });
     if (data.city) skyCity(data.city, world);
     if (data.nebula) skyNebula(data.nebula, world);
     SKY.scene.add(world);
@@ -572,11 +585,9 @@ function skyCity(city, world) {
         label.position.set(cx, top + 17, cz);
         world.add(label);
     });
+    // streets and no ground: the city stands on its grid in the night, the
+    // way Loci's does (24 Oct 2026: "drop the ground plane")
     const size = (Math.ceil(ext / SKY_BLOCK) * 2 + 3) * SKY_BLOCK;
-    const ground = new THREE.Mesh(new THREE.PlaneGeometry(size * 14, size * 14),
-                                  new THREE.MeshStandardMaterial({ color: 0x0a0d18, roughness: 1 }));
-    ground.rotation.x = -Math.PI / 2;
-    world.add(ground);
     const grid = new THREE.GridHelper(size, size / SKY_BLOCK, 0x2a3358, 0x1a2140);
     grid.position.set(SKY_BLOCK / 2, 0.05, SKY_BLOCK / 2);
     world.add(grid);
@@ -642,13 +653,25 @@ function skySnow(world, size, h) {
 
 // ---- the right brain: the nebula above it -------------------------------------
 // Memory's own places (its embeddings by PCA, about 800 across), widened to
-// cover the city and flattened into a layer above the rooftops. A core is a
-// star in the hue of where it sits, as on Memory's Map; satellites are dust
-// in their core's hue; a few big hazes give it its cloud.
+// cover the city and lifted clear of the rooftops - squashed only a little,
+// so it keeps the round cloud Memory's Stars has (it was pressed to a third of
+// its height until 24 Oct 2026: "memory less flattened, I like the nebula from
+// memory a lot"). A core is a lit ball in the hue of where it sits, with a
+// halo, as on Memory's Stars; satellites are smaller balls in their core's
+// hue; a few big hazes give it its cloud.
+const NEB_SQUASH = 0.75;
 function skyNebula(neb, world) {
-    const spread = Math.max(SKY.extent * 2.2, 420) / 400;
-    SKY.skyY = SKY.height + 190;
-    const place = p => new THREE.Vector3(p[0] * spread, SKY.skyY + p[1] * spread * 0.32, p[2] * spread);
+    // sized by the city, so the two halves are seen together and the sky
+    // grows as the city does (24 Oct 2026: "memory stars should be closer
+    // and more in scale with the city")
+    const spread = Math.max(SKY.extent * 1.15, 140) / 400;
+    SKY.starK = Math.min(1.2, Math.max(0.35, spread / 1.2));
+    const ys = neb.nodes.map(n => n.pos[1]);
+    const lo = ys.length ? Math.min(...ys) : 0;
+    SKY.skyY = SKY.height + 50 - lo * spread * NEB_SQUASH;
+    SKY.skyTop = SKY.skyY + (ys.length ? Math.max(...ys) : 0) * spread * NEB_SQUASH;
+    const place = p => new THREE.Vector3(p[0] * spread, SKY.skyY + p[1] * spread * NEB_SQUASH, p[2] * spread);
+    SKY.ballGeo = SKY.ballGeo || new THREE.SphereGeometry(1, 20, 14);
     const byId = new Map(neb.nodes.map(n => [n.id, n]));
     for (const n of neb.nodes) n.hue = (Math.atan2(n.pos[2], n.pos[0]) * 180 / Math.PI + 360 + n.pos[1] * 0.15) % 360;
     for (const n of neb.nodes) {
@@ -663,15 +686,20 @@ function skyNebula(neb, world) {
             : new THREE.Color().setHSL(n.hue / 360, n.kind === "core" ? 0.88 : 0.7, n.kind === "core" ? 0.64 : 0.76);
         const star = { ...n, kind: n.kind === "core" ? "core" : "satellite", x: p.x, y: p.y, z: p.z, col };
         if (n.kind === "core") {
-            const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: SKY.starTex, color: col, transparent: true,
-                depthWrite: false, blending: THREE.AdditiveBlending }));
-            const s = 9 + 4 * Math.sqrt(n.evidence || 1) + (n.verbatim ? 4 : 0);
-            sp.scale.set(s, s, 1);
-            sp.position.copy(p);
-            sp.userData.thing = star;
-            star.sprite = sp; star.size = s;
-            world.add(sp);
-            SKY.pickables.push(sp);
+            // a ball you can see the round of, and a halo that gives it its push
+            const s = (9 + 4 * Math.sqrt(n.evidence || 1) + (n.verbatim ? 4 : 0)) * SKY.starK;
+            const ball = new THREE.Mesh(SKY.ballGeo, new THREE.MeshStandardMaterial({ color: col, emissive: col,
+                emissiveIntensity: 0.55, roughness: 0.35, metalness: 0.05, transparent: true }));
+            ball.position.copy(p);
+            ball.userData.thing = star;
+            const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: SKY.starTex, color: col, transparent: true,
+                opacity: 0.45, depthWrite: false, blending: THREE.AdditiveBlending }));
+            halo.position.copy(p);
+            Object.assign(star, { ball, sprite: halo, size: s, r: s * 0.42, k: 1,
+                                  tw: Math.random() * 6.283, tws: 0.7 + Math.random() * 1.6 });
+            skyStarScale(star, 1);
+            world.add(halo, ball);
+            SKY.pickables.push(ball);
         } else {
             star.dust = dust.length;
             dust.push(star);
@@ -682,15 +710,20 @@ function skyNebula(neb, world) {
         SKY.starById.set(n.id, star);
     }
     if (dust.length) {
-        const g = new THREE.BufferGeometry();
-        g.setAttribute("position", new THREE.Float32BufferAttribute(dustPos, 3));
-        g.setAttribute("color", new THREE.Float32BufferAttribute(dustCol, 3));
-        const pts = new THREE.Points(g, new THREE.PointsMaterial({ size: 4.2, map: SKY.starTex, vertexColors: true,
-            transparent: true, opacity: 0.9, depthWrite: false, blending: THREE.AdditiveBlending }));
-        pts.userData.dust = dust;
-        world.add(pts);
-        SKY.satPoints = pts;
-        SKY.pickables.push(pts);
+        // one instanced mesh for every satellite: small balls, each in its
+        // core's hue, each breathing on its own clock (skyTick)
+        const mesh = new THREE.InstancedMesh(SKY.ballGeo, new THREE.MeshStandardMaterial({ color: 0xffffff,
+            emissive: 0x2a2d40, roughness: 0.45, transparent: true }), dust.length);
+        const c = new THREE.Color();
+        dust.forEach((d, i) => {
+            mesh.setColorAt(i, c.setRGB(dustCol[i * 3], dustCol[i * 3 + 1], dustCol[i * 3 + 2]));
+            d.tw = Math.random() * 6.283; d.tws = 0.7 + Math.random() * 1.6;
+        });
+        mesh.userData.dust = dust;
+        SKY.satMesh = mesh;
+        skySatScale(0);
+        world.add(mesh);
+        SKY.pickables.push(mesh);
     }
     // the links, faint: a satellite to its cores, gold where one episode is two stories
     const lp = [], lc = [];
@@ -714,19 +747,49 @@ function skyNebula(neb, world) {
     for (const s of big) {
         const h = new THREE.Sprite(new THREE.SpriteMaterial({ map: SKY.hazeTex, color: s.col, transparent: true,
             opacity: 0.16, depthWrite: false, blending: THREE.AdditiveBlending }));
-        const r = 110 + Math.random() * 90;
-        h.scale.set(r, r * 0.55, 1);
+        const r = (110 + Math.random() * 90) * SKY.starK;
+        h.scale.set(r, r * 0.8, 1);
         h.position.set(s.x, s.y, s.z);
         world.add(h);
     }
 }
 
-// ---- looking around ------------------------------------------------------------
+// a core's size: its ball and its halo together, k for lit or chosen, tw for
+// the twinkle
+function skyStarScale(s, tw) {
+    s.ball.scale.setScalar(s.r * s.k * tw);
+    const h = s.size * 2.1 * s.k * tw;
+    s.sprite.scale.set(h, h, 1);
+}
+
+const SAT_R = 2.6;   // THREE arrives with the tab (loaded on first open), so the helper is made on first use
+function skySatScale(t) {
+    const m = SKY.satMesh;
+    if (!m) return;
+    const _sat = SKY._sat || (SKY._sat = new THREE.Object3D());
+    m.userData.dust.forEach((d, i) => {
+        _sat.position.set(d.x, d.y, d.z);
+        _sat.scale.setScalar(SAT_R * (SKY.starK || 1) * (1 + 0.2 * Math.sin(t * d.tws + d.tw)));
+        _sat.updateMatrix();
+        m.setMatrixAt(i, _sat.matrix);
+    });
+    m.instanceMatrix.needsUpdate = true;
+}
+
+// ---- looking around: the family's three, as on Memory's Stars (24 Oct 2026) -----
+// Left-drag turns around the middle of the view, right-drag (or shift-drag)
+// slides it across the screen, the wheel or a pinch zooms; the middle button
+// is left alone. A hand's move is followed at once - only the camera's own moves
+// (fit, a chosen thing) ease there. Easing the hand too is what made a drag
+// feel like the camera rumbled instead of turning.
 function skyWire(el) {
     let down = null, moved = 0;
     const pts = new Map();
+    const now = (...keys) => { for (const k of keys) SKY.orbit[k] = SKY.goal[k]; };
     el.addEventListener("contextmenu", e => e.preventDefault());
+    el.addEventListener("mousedown", e => { if (e.button === 1) e.preventDefault(); });   // no autoscroll
     el.addEventListener("pointerdown", e => {
+        if (e.button === 1) { return; }
         el.setPointerCapture(e.pointerId);
         pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
         down = { pan: e.button === 2 || e.shiftKey };
@@ -738,19 +801,25 @@ function skyWire(el) {
         if (!prev) { skyHover(e); return; }
         const dx = e.clientX - prev.x, dy = e.clientY - prev.y;
         moved += Math.abs(dx) + Math.abs(dy);
+        const g = SKY.goal;
         if (pts.size === 2) {
             const [p, q] = [...pts.entries()];
             const other = p[0] === e.pointerId ? q[1] : p[1];
             const before = Math.hypot(prev.x - other.x, prev.y - other.y);
             const after = Math.hypot(e.clientX - other.x, e.clientY - other.y);
-            if (before > 0) SKY.goal.r = Math.min(4000, Math.max(30, SKY.goal.r * before / after));
+            if (before > 0) { g.r = Math.min(4000, Math.max(30, g.r * before / after)); now("r"); }
         } else if (down && down.pan) {
-            const g = SKY.goal, s = g.r * 0.0016;
-            g.x += (-Math.cos(g.th) * dx - Math.sin(g.th) * dy) * s;
-            g.z += (Math.sin(g.th) * dx - Math.cos(g.th) * dy) * s;
+            // slide along the screen: what is under the cursor stays under it
+            const s = 2 * g.r * Math.tan(SKY.camera.fov * Math.PI / 360) / Math.max(1, el.clientHeight);
+            const ct = Math.cos(g.th), st = Math.sin(g.th), cp = Math.cos(g.ph), sp = Math.sin(g.ph);
+            g.x += (-ct * dx - cp * st * dy) * s;
+            g.y += sp * dy * s;
+            g.z += (st * dx - cp * ct * dy) * s;
+            now("x", "y", "z");
         } else {
-            SKY.goal.th -= dx * 0.005;
-            SKY.goal.ph = Math.min(2.6, Math.max(0.12, SKY.goal.ph - dy * 0.004));
+            g.th -= dx * 0.005;
+            g.ph = Math.min(2.6, Math.max(0.12, g.ph - dy * 0.004));
+            now("th", "ph");
         }
         pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
     });
@@ -766,6 +835,7 @@ function skyWire(el) {
     el.addEventListener("wheel", e => {
         e.preventDefault();
         SKY.goal.r = Math.min(4000, Math.max(30, SKY.goal.r * Math.exp(e.deltaY * 0.0011)));
+        now("r");
     }, { passive: false });
 }
 
@@ -777,7 +847,7 @@ function skyRay(e) {
     ray.setFromCamera(v, SKY.camera);
     const hit = ray.intersectObjects(SKY.pickables, false)[0];
     if (!hit) return null;
-    if (hit.object === SKY.satPoints) return SKY.satPoints.userData.dust[hit.index] || null;
+    if (hit.object === SKY.satMesh) return SKY.satMesh.userData.dust[hit.instanceId] || null;
     return hit.object.userData.thing || null;
 }
 
@@ -820,15 +890,17 @@ function skyLook() {
         w.on = on;
     }
     for (const s of SKY.stars) {
-        if (!s.sprite) continue;
+        if (!s.ball) continue;
         const lit = asked && asked.memories.has(s), chosen = sel === s;
         const dim = asked && !lit;
         s.sprite.material.color.copy(lit || chosen ? new THREE.Color(0xffffff) : s.col);
-        s.sprite.material.opacity = dim ? 0.25 : 1;
-        const k = lit || chosen ? 2.4 : 1;
-        s.sprite.scale.set(s.size * k, s.size * k, 1);
+        s.sprite.material.opacity = dim ? 0.08 : lit || chosen ? 0.8 : 0.45;
+        s.ball.material.opacity = dim ? 0.25 : 1;
+        s.ball.material.emissiveIntensity = lit || chosen ? 1.3 : 0.55;
+        s.k = lit || chosen ? 1.9 : 1;
+        skyStarScale(s, 1);
     }
-    if (SKY.satPoints) SKY.satPoints.material.opacity = asked ? 0.3 : 0.9;
+    if (SKY.satMesh) SKY.satMesh.material.opacity = asked ? 0.3 : 1;
     if (SKY.skyLines) {
         SKY.skyLines.visible = SKY.linesOn;
         SKY.skyLines.material.opacity = asked ? 0.12 : 0.45;
@@ -941,9 +1013,10 @@ async function skyAsk(q) {
 }
 
 function skyFit() {
-    const top = SKY.stars.length ? SKY.skyY : SKY.height;
-    const r = Math.max(SKY.extent * 3.4, top * 2.6, 300);
-    Object.assign(SKY.goal, { x: SKY_BLOCK * 0.25, y: top * 0.45, z: SKY_BLOCK * 0.25, r, ph: 1.28 });
+    // framed on the whole picture, the city's feet to the top of the sky
+    const top = SKY.stars.length ? (SKY.skyTop || SKY.skyY) : SKY.height;
+    const r = Math.max(SKY.extent * 2.6, top * 1.5, 220);
+    Object.assign(SKY.goal, { x: SKY_BLOCK * 0.25, y: top * 0.5, z: SKY_BLOCK * 0.25, r, ph: 1.32 });
 }
 
 function skyTick(now) {
@@ -972,10 +1045,10 @@ function skyTick(now) {
     if (SKY.beams) SKY.beams.material.opacity = 0.55 + 0.25 * Math.sin(SKY.t * 2.4);
     for (const b of SKY.beacons) b.mesh.visible = Math.sin(SKY.t * (b.warn ? 5 : 2.2) + b.phase) > -0.2;
     for (const s of SKY.stars) {
-        if (!s.sprite || SKY.asked || SKY.selected === s) continue;
-        const tw = 1 + 0.12 * Math.sin(SKY.t * 1.7 + s.x * 0.05);
-        s.sprite.scale.set(s.size * tw, s.size * tw, 1);
+        if (!s.ball || SKY.asked || SKY.selected === s) continue;
+        skyStarScale(s, 1 + 0.09 * Math.sin(SKY.t * s.tws + s.tw));
     }
+    skySatScale(SKY.t);
     if (SKY.snow && SKY.snowOn) {
         const p = SKY.snow.points.geometry.attributes.position, sp = SKY.snow.speed;
         for (let i = 0; i < sp.length; i++) {

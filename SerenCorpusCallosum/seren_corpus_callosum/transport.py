@@ -14,6 +14,8 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
+from seren_sinew.request_log import request_id_hooks
+
 
 class HttpTransport:
     """Async POST-JSON over httpx, with a shared client + sane timeout.
@@ -47,7 +49,7 @@ class HttpTransport:
             self._client.timeout = self._httpx.Timeout(self._timeout)
 
     async def __aenter__(self) -> "HttpTransport":
-        self._client = self._httpx.AsyncClient(timeout=self._timeout)
+        self._client = self._httpx.AsyncClient(timeout=self._timeout, event_hooks=request_id_hooks(asynchronous=True))
         return self
 
     async def __aexit__(self, *exc: Any) -> None:
@@ -62,7 +64,7 @@ class HttpTransport:
         # headers carries the per-store Authorization bearer when the store has
         # auth on (resolved once by the adapter); None for an open store.
         if self._client is None:
-            async with self._httpx.AsyncClient(timeout=self._timeout) as client:
+            async with self._httpx.AsyncClient(timeout=self._timeout, event_hooks=request_id_hooks(asynchronous=True)) as client:
                 resp = await client.post(url, json=payload, headers=headers)
                 resp.raise_for_status()
                 return resp.json()
@@ -76,7 +78,7 @@ class HttpTransport:
         a timeout of its own: a map is one read of a whole store."""
         t = self._httpx.Timeout(timeout or self._timeout)
         if self._client is None:
-            async with self._httpx.AsyncClient(timeout=t) as client:
+            async with self._httpx.AsyncClient(timeout=t, event_hooks=request_id_hooks(asynchronous=True)) as client:
                 resp = await client.get(url, headers=headers)
                 resp.raise_for_status()
                 return resp.json()

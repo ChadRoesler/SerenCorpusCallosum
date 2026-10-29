@@ -34,7 +34,7 @@ dependencies = [
     "seren-meninges>=6.0.0,<7",
     # Shared request logging - one copy across the family (SerenSinew). Mounted
     # outermost (before auth) so even 401s get logged. -> corpus-callosum-requests.log.
-    "seren-sinew>=1.0.0,<6",
+    "seren-sinew>=5.3.0,<6",  # 5.3.0: request ids carried to the next hop (request_id_hooks / request_id_scope), seren_sinew.atomic
 ]
 
 [project.optional-dependencies]

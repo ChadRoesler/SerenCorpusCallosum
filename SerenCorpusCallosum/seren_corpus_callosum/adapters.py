@@ -105,6 +105,9 @@ class SerenMemoryAdapter(_BaseAdapter):
     type = "seren_memory"
     default_topic_search_path = "/by_topic"
     max_n = 50                      # SerenMemory SearchRequest: n_results le=50
+    # off until the harness has scored it beside the old row shape (30 Oct 2026);
+    # the decision is made, the default flips with the numbers
+    _EPISODE_ROWS_DEFAULT = False
 
     async def search(self, query: str, n: int) -> list[Hit]:
         opts = self._cfg.options
@@ -137,15 +140,31 @@ class SerenMemoryAdapter(_BaseAdapter):
             meta.setdefault("topic", raw.get("topic"))
             if isinstance(raw.get("surroundings"), dict):
                 meta["surroundings"] = dict(raw["surroundings"])
+            content = raw.get("content", "")
             if isinstance(raw.get("matched_via"), dict):
                 # The core is in the packet because one of its satellites
                 # matched (Memory 4.9: a core is as near as its nearest
                 # episode). Kept on the hit so the packet says why it is here.
                 meta["matched_via"] = dict(raw["matched_via"])
+                # THE EPISODE IS THE ROW (the design call, 30 Oct 2026: "definitely
+                # A"). When a core came in through an episode, the reader gets
+                # the episode - the 40 tokens that matched - and the core by id
+                # (the hit's id stays the core's, for get_memory and for the
+                # graders), not the core's 200-token retelling with the answer
+                # buried in metadata. On the wren set a 1,000-token page held
+                # four or five fat cores; 8 of its 33 hard misses were found
+                # and handed over as the wrong text. options.episode_rows
+                # turns it off for a side-by-side.
+                via_text = str(meta["matched_via"].get("content") or "").strip()
+                if via_text and bool(opts.get("episode_rows", self._EPISODE_ROWS_DEFAULT)):
+                    meta["row"] = "episode"
+                    meta["core_id"] = str(raw.get("id", ""))
+                    meta["core_tokens"] = max(1, (len(content or "") + 3) // 4)
+                    content = via_text
             hits.append(Hit(
                 store=self.name,
                 id=str(raw.get("id", "")),
-                content=raw.get("content", ""),
+                content=content,
                 base_relevance=base_relevance_from_distance(dist),
                 raw_distance=dist,
                 native_score=_as_float_or_none(raw.get("score")),

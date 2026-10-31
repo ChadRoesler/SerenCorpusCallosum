@@ -282,6 +282,33 @@ def test_a_memory_without_surroundings_is_unchanged():
     assert [f.hit.id for f in fused] == ["m1", "l1"] and "surroundings" not in fused[0].hit.metadata
 
 
+def test_the_episode_is_the_row_when_asked(monkeypatch):
+    """The design call of 30 Oct 2026 ('definitely A'): with options.episode_rows the reader
+    gets the episode that matched as the row and the core by id; the hit's id
+    stays the core's. Off, the core's text is the row and the episode rides on
+    matched_via as before."""
+    import copy
+    from seren_corpus_callosum.fusion import row_cost
+    resp = copy.deepcopy(MEM_RESP)
+    resp["hits"][0]["matched_via"] = {"id": "s1", "content": "first time", "created_at": 100.0, "raw_distance": 0.2}
+    for on in (True, False):
+        t = RecordingTransport({"http://mem/search": resp, "http://loci/search": LOCI_RESP})
+        cfg = _fed_cfg()
+        for s in cfg.stores:
+            if s.type == "seren_memory":
+                s.options["episode_rows"] = on
+        fused = asyncio.run(Federation(cfg, t).search("q", n_results=10))
+        core = next(f for f in fused if f.hit.id == "c1").hit
+        if on:
+            assert core.content == "first time" and core.metadata["row"] == "episode"
+            assert core.metadata["core_id"] == "c1" and core.metadata["core_tokens"] >= 1
+            assert core.metadata["matched_via"]["id"] == "s1"
+            assert row_cost(core) == 3 + 1, "the episode's own tokens and nothing else"
+        else:
+            assert core.content == resp["hits"][0]["content"] and "row" not in core.metadata
+            assert row_cost(core) > 3 + 1, "core text plus the episode it came through"
+
+
 def test_a_core_found_through_its_episode_says_so():
     """Memory 4.9: a core is as near as its nearest satellite, and the hit
     carries matched_via - the episode that found it - with that episode first

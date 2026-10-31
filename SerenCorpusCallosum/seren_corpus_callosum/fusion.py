@@ -117,7 +117,10 @@ def row_cost(hit: Hit) -> int:
     strength of an episode (that text rides on the hit as matched_via, and the
     reader gets it too)."""
     cost = est_tokens(hit.content) + _ROW_OVERHEAD_TOKENS
-    via = (hit.metadata or {}).get("matched_via")
+    meta = hit.metadata or {}
+    if meta.get("row") == "episode":
+        return cost                       # the episode IS the content; the core rides by id only
+    via = meta.get("matched_via")
     if isinstance(via, dict) and via.get("content"):
         cost += est_tokens(str(via["content"]))
     return cost

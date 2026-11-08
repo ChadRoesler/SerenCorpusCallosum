@@ -49,7 +49,6 @@ _DEFAULT_TIMEOUT_S = 5.0        # per-store call timeout - a slow store degrades
 _DEFAULT_WEIGHT = 1.0           # equal cross-store trust until told otherwise
 _DEFAULT_FLOOR = 0.0            # 0 = trust the store's own ordering; raise to ~0.3 if noisy
 _DEFAULT_FUSION_MODE = "rrf"    # rank-only RRF; "rrf_pct" / "percentile" are the N-store common-currency modes
-_DEFAULT_AUTHORITY_MARGIN = 0.035  # confident-store -> promote-to-rank-1 threshold; 0 disables. Embedder-dependent: tune via brain_eval.
 _DEFAULT_MIN_PER_STORE = 1      # diversity floor: seats each contributing store keeps through the trim; 0 disables
 _DEFAULT_EDGES_ENABLED = True   # append topic-association edges to the packet after the fan; False = pure vector
 _DEFAULT_EDGE_BUDGET = 3        # max association edges appended (a small, bounded addendum on top of n_results)
@@ -142,12 +141,12 @@ class FederationConfig:
     n_results: int = _DEFAULT_N_RESULTS
     fetch_multiplier: int = _DEFAULT_FETCH_MULTIPLIER
     per_store_timeout_s: float = _DEFAULT_TIMEOUT_S
-    # How the merge ranks across stores, and whether a clearly-confident store's
-    # top hit is promoted to lead. fusion_mode stays 'rrf' (rank-only, embedder-
-    # agnostic) by default; 'percentile'/'rrf_pct' are the N-store common-currency
-    # modes. authority_margin>0 turns on most-confident-store-wins promotion.
+    # How the merge ranks across stores. fusion_mode stays 'rrf' (rank-only,
+    # embedder-agnostic) by default; 'percentile'/'rrf_pct' are the N-store
+    # common-currency modes. (authority_margin, the confident-store promotion,
+    # was removed 7 Nov 2026: it never changed a packet. A yaml that still
+    # names it gets a warning and the key is ignored.)
     fusion_mode: str = _DEFAULT_FUSION_MODE
-    authority_margin: float = _DEFAULT_AUTHORITY_MARGIN
     # Diversity floor: each contributing store keeps at least this many of its
     # top hits through the n_results trim, so the packet stays a briefing (fact
     # AND scar), not all-one-class. 1 seats every answering store when n allows;
@@ -229,6 +228,9 @@ class FederationConfig:
                 "falling back to %r",
                 mode, sorted(_VALID_FUSION_MODES), _DEFAULT_FUSION_MODE)
             mode = _DEFAULT_FUSION_MODE
+        if "authority_margin" in d:
+            log.warning("federation.authority_margin was removed on 7 Nov 2026 (measured: it never "
+                        "changed a packet); the key is ignored")
         return cls(
             stores=stores,
             k=int(d.get("k", _DEFAULT_K)),
@@ -236,7 +238,6 @@ class FederationConfig:
             fetch_multiplier=int(d.get("fetch_multiplier", _DEFAULT_FETCH_MULTIPLIER)),
             per_store_timeout_s=float(d.get("per_store_timeout_s", _DEFAULT_TIMEOUT_S)),
             fusion_mode=mode,
-            authority_margin=float(d.get("authority_margin", _DEFAULT_AUTHORITY_MARGIN)),
             min_per_store=int(d.get("min_per_store", _DEFAULT_MIN_PER_STORE)),
             edges_enabled=bool(d.get("edges_enabled", _DEFAULT_EDGES_ENABLED)),
             edge_budget=int(d.get("edge_budget", _DEFAULT_EDGE_BUDGET)),

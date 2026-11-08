@@ -106,12 +106,11 @@ def test_no_budget_is_the_row_count_trim():
     assert _order(rrf_fuse({"l": loci}, k=60, n_results=3, budget_tokens=0)) == _order(plain)
 
 
-def test_the_authority_lead_still_leads_the_page():
-    # loci's top is a perfect exact-key hit; authority promotes it to lead and the
-    # page keeps it first (emitted in fused order).
+def test_a_weighted_lead_still_leads_the_page():
+    # loci is trusted more, so its top leads, and the page keeps it first (emitted in fused order).
     mem = [_hit("m", "m1", "m" * 40, base=0.6), _hit("m", "m2", "m" * 40, base=0.5)]
     loci = [_hit("l", "l1", "l" * 40, base=1.0), _hit("l", "l2", "l" * 40, base=0.4)]
-    fused = rrf_fuse({"m": mem, "l": loci}, k=60, authority_margin=0.035, budget_tokens=25)
+    fused = rrf_fuse({"m": mem, "l": loci}, k=60, weights={"l": 1.5}, budget_tokens=25)
     assert _order(fused)[0] == "l:l1"
     assert packet_cost(fused) <= 25
 

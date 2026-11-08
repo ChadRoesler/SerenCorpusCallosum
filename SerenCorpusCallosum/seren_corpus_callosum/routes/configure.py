@@ -53,8 +53,6 @@ async def configure(request: Request, params: ConfigureRequest = Body(...)) -> d
                 422, f"unknown fusion_mode {mode!r}; valid: {sorted(_VALID_FUSION_MODES)}"
             )
         cfg.fusion_mode = mode
-    if params.authority_margin is not None:
-        cfg.authority_margin = params.authority_margin
     if params.min_per_store is not None:
         cfg.min_per_store = params.min_per_store
     if params.edges_enabled is not None:
@@ -107,12 +105,14 @@ async def configure(request: Request, params: ConfigureRequest = Body(...)) -> d
 
     # Build a summary of what changed
     changed = {}
+    ignored = {}
+    if params.authority_margin is not None:
+        ignored["authority_margin"] = ("removed 7 Nov 2026: the confident-store promotion never changed a "
+                                       "packet in 1,152 measured combinations; nothing was set")
     if params.k is not None:
         changed["k"] = cfg.k
     if params.fusion_mode is not None:
         changed["fusion_mode"] = cfg.fusion_mode
-    if params.authority_margin is not None:
-        changed["authority_margin"] = cfg.authority_margin
     if params.min_per_store is not None:
         changed["min_per_store"] = cfg.min_per_store
     if params.edges_enabled is not None:
@@ -144,4 +144,4 @@ async def configure(request: Request, params: ConfigureRequest = Body(...)) -> d
             if any(o.get("name") == s.name for o in params.stores)
         ]
 
-    return {"ok": True, "changed": changed, "active": len(request.app.state.federation.store_names)}
+    return {"ignored": ignored, "ok": True, "changed": changed, "active": len(request.app.state.federation.store_names)}

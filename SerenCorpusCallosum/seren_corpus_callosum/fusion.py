@@ -43,6 +43,15 @@ WHAT THIS FILE DELIBERATELY DOES NOT DO:
     touches only rank + weight. That keeps the embedder-immunity airtight:
     if magnitude never enters the sort, a changing embedder can't perturb
     the merged order.
+
+REMOVED, 7 Nov 2026: the "authority" promotion (a most-confident store's
+    top hit jumping to rank 1 when its intra-store margin cleared an
+    authority_margin). Measured in Probe's harness across 1,152 knob
+    combinations on five corpora, it never changed a packet: 1/(1+d)
+    squeezes MiniLM's useful range into 0.45 to 0.59, so no store ever
+    looked confident, and the case it was built for (Loci's exact-key hit)
+    is already rank 1 in its own store and leads by weight when it should.
+    Rank and weight are the whole merge again.
 """
 from __future__ import annotations
 
@@ -56,12 +65,6 @@ from typing import Optional
 # mode to "rrf" defensively, so a bad value has ONE defined behavior (rank-only)
 # whether it arrives via config or a direct call - never a silent surprise.
 _VALID_FUSION_MODES = frozenset({"rrf", "rrf_pct", "percentile"})
-
-# A top hit at/above this base_relevance is treated as a perfect match (Loci's
-# exact-key hit returns score 1.0; a zero-distance vector hit also lands here).
-# Such a hit is maximally authoritative ON ITS OWN MERIT - see _store_margin.
-_EXACT_MATCH_BASE = 0.999
-
 
 @dataclass
 class Hit:
@@ -159,7 +162,7 @@ def pack_to_budget(fused: list[FusedHit], budget_tokens: int, min_per_store: int
     seats every row that still fits; a row too big for what is left is skipped
     and the walk goes on, so one fat core cannot end the page with room to
     spare. n_results, when given as well, is a second cap on the row count.
-    Emitted in fused order, so the authority lead still leads."""
+    Emitted in fused order, so the lead still leads."""
     cap = n_results if n_results is not None and n_results > 0 else len(fused)
     chosen: set[int] = set()
     used = 0
@@ -223,96 +226,6 @@ def apply_floor(hits: list[Hit], min_base_relevance: float) -> list[Hit]:
     return [h for h in hits if h.base_relevance >= min_base_relevance]
 
 
-def _store_margin(hits: list[Hit]) -> Optional[float]:
-    """A store's INTRA-store confidence: how much its top hit stands out, in the
-    store's OWN embedder space (a within-store comparison, which IS meaningful -
-    see apply_floor). That SHAPE survives an embedder swap far better than raw
-    magnitude, which is why comparing margins across stores is a defensible
-    confidence signal even though comparing raw distances across stores is not.
-
-    Two regimes:
-
-    1. PERFECT TOP (base_relevance >= _EXACT_MATCH_BASE). The keystone case.
-       Loci's exact-key hit returns score 1.0 - "here's EXACTLY how it's called",
-       the precise invocation, the single most certain signal the whole system
-       can produce. That certainty is intrinsic, not relative: it stands on its
-       own merit whether or not a runner-up exists. So its confidence is its own
-       base_relevance (~1.0), the maximum. This is what lets a LONE exact-key
-       hit lead - previously a one-hit store had no runner-up to form a gap and
-       so could never be authoritative, which buried the most authoritative
-       answer there is. It also lets an exact-key hit out-confidence a merely
-       wide-gap vector store ("how it's called" beats "I'm fairly sure about
-       this episode"), which is the correct precedence.
-
-    2. ORDINARY TOP. Confidence is the gap to the runner-up: a wide gap = clear
-       winner, a flat gap = guessing. A LONE non-perfect hit has no runner-up
-       and isn't authoritative - it's just sparse - so it abstains (None) and
-       plain RRF stands.
-    """
-    if not hits:
-        return None
-    top = hits[0].base_relevance
-    if top >= _EXACT_MATCH_BASE:
-        return top                      # perfect match: maximally confident on its own merit
-    if len(hits) < 2:
-        return None                     # lone non-perfect hit: sparse, not confident -> abstain
-    return top - hits[1].base_relevance
-
-
-def _most_confident_store(ranked_lists: dict[str, list[Hit]],
-                          threshold: float) -> Optional[str]:
-    """N-store generalization of the authority rule. Across ALL stores, the one
-    whose intra-store margin is largest AND clears `threshold`. No store name is
-    hardcoded - 'the authoritative store usually wins' is an OUTCOME of it being
-    the most internally confident, not a privilege. Deterministic on margin ties
-    (first in iteration order == configured store order)."""
-    best_store: Optional[str] = None
-    best_margin: Optional[float] = None
-    for store, hits in ranked_lists.items():
-        m = _store_margin(hits)
-        if m is not None and m >= threshold and (best_margin is None or m > best_margin):
-            best_store, best_margin = store, m
-    return best_store
-
-
-def _apply_authority(fused: list[FusedHit], ranked_lists: dict[str, list[Hit]],
-                     threshold: float) -> list[FusedHit]:
-    """Promote the most-confident store's top hit to fused rank 1, if any store
-    clears the margin. Pure list surgery on the already-fused order - the merge
-    math is untouched.
-
-    Why an explicit promotion rather than a fusion weight: a confident
-    authoritative fact and a genuinely relevant episode legitimately tie at each
-    store's rank 1, and rank-only RRF then breaks that tie on store-iteration
-    order - demoting the fact for a reason that has nothing to do with the
-    answer. This restores the correct policy: when a store is clearly confident
-    in its top answer, that answer LEADS the packet; the relevant context still
-    rides right behind it.
-
-    This is the ONE place fusion consults base_relevance for ORDERING, and only
-    as an INTRA-store confidence signal (via _store_margin), never as a cross-
-    store magnitude comparison - so the merge's embedder-immunity is preserved.
-
-    Respects WEIGHT: authority only breaks the tie FOR THE LEAD. If a higher-
-    weighted hit strictly outscores the confident store's top, that deliberate
-    weight wins - authority resolves the arbitrary store-iteration tie among
-    co-leaders, it never overrides a weight gap an operator chose."""
-    cs = _most_confident_store(ranked_lists, threshold)
-    if cs is None or not ranked_lists.get(cs) or not fused:
-        return fused
-    top = ranked_lists[cs][0]
-    idx = next((i for i, f in enumerate(fused)
-                if f.hit.store == cs and f.hit.id == top.id), None)
-    if idx is None or idx == 0:
-        return fused
-    # Weight sets the pecking order; authority only breaks the tie FOR THE LEAD.
-    # If something strictly outscores the confident store's top (a deliberate
-    # weight gap), defer to it - don't override the operator's trust.
-    if fused[idx].rrf_score < fused[0].rrf_score - 1e-9:
-        return fused
-    return [fused[idx]] + fused[:idx] + fused[idx + 1:]
-
-
 def _trim_with_quota(fused: list[FusedHit], n_results: int,
                      min_per_store: int) -> list[FusedHit]:
     """Trim to n_results while GUARANTEEING each store that contributed keeps at
@@ -333,7 +246,7 @@ def _trim_with_quota(fused: list[FusedHit], n_results: int,
     order - you can't seat everyone at a table with too few chairs.
 
     Order is preserved: selections are emitted in the original fused order, so
-    the authority lead still leads and a guaranteed-but-weak hit rides at the
+    the lead still leads and a guaranteed-but-weak hit rides at the
     tail (present, but honestly ranked). The floor still upstream-decides 'worth
     showing at all'; the quota only decides 'given it cleared the floor, its
     class gets a seat'. min_per_store <= 0 disables (pure top-n trim)."""
@@ -366,7 +279,6 @@ def rrf_fuse(
     weights: Optional[dict[str, float]] = None,
     n_results: Optional[int] = None,
     fusion_mode: str = "rrf",
-    authority_margin: float = 0.0,
     min_per_store: int = 1,
     budget_tokens: Optional[int] = None,
 ) -> list[FusedHit]:
@@ -390,10 +302,6 @@ def rrf_fuse(
             on intra-store percentile (rank-1 == 100 everywhere); "rrf_pct"
             keeps the RRF score but breaks ties on percentile instead of
             store-iteration order. An unknown value normalizes to "rrf".
-        authority_margin: > 0 turns on most-confident-store-wins promotion -
-            the clearly-confident store's top hit leads the packet even if
-            rank-only fusion buried it (see _apply_authority). 0 disables it,
-            making "rrf" mode byte-identical to the original rank-only RRF.
         min_per_store: guarantee each contributing store at least this many of
             its top hits survive the n_results trim - the packet's diversity
             floor (a fact AND a scar). 1 (default) seats every answering store
@@ -435,8 +343,8 @@ def rrf_fuse(
 
     # Build in (store-iteration-order, rank-ascending) order. Python's sort is
     # stable, so equal scores retain exactly this order - the deterministic,
-    # magnitude-free tie-break. (fusion_mode='rrf' + authority_margin<=0 is
-    # byte-identical to the original rank-only RRF.)
+    # magnitude-free tie-break. (fusion_mode='rrf' is byte-identical to the
+    # original rank-only RRF.)
     fused: list[FusedHit] = []
     for store, hits in ranked_lists.items():
         w = weights.get(store, 1.0)
@@ -455,12 +363,6 @@ def rrf_fuse(
         fused.sort(key=lambda f: (f.rrf_score, pctl[(f.hit.store, f.hit.id)]), reverse=True)
     else:
         fused.sort(key=lambda f: f.rrf_score, reverse=True)
-
-    # Most-confident-store-wins authority: promote the clearly-confident store's
-    # top hit to fused rank 1 BEFORE trimming, so the authoritative answer leads
-    # the packet even if rank-only fusion buried it. Disabled at margin <= 0.
-    if authority_margin > 0:
-        fused = _apply_authority(fused, ranked_lists, authority_margin)
 
     # Trim to n_results, but guarantee each contributing store keeps at least
     # min_per_store seats (the packet stays a diverse briefing, not all-one-class).

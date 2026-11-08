@@ -2,7 +2,7 @@
 Tests for the SCC /configure endpoint - dynamic runtime federation tuning.
 
 Validates:
-  1. Federation-level knobs (k, fusion_mode, authority_margin, etc.) update
+  1. Federation-level knobs (k, fusion_mode, min_per_store, etc.) update
      and persist across the live federation.
   2. Per-store weight/floor overrides mutate matching stores.
   3. An unknown store name in overrides returns 404.
@@ -41,7 +41,6 @@ def _cfg() -> CorpusCallosumConfig:
         federation=FederationConfig(
             k=60,
             fusion_mode="rrf",
-            authority_margin=0.035,
             min_per_store=1,
             edges_enabled=True,
             edge_budget=3,
@@ -75,7 +74,7 @@ def test_configure_updates_k_and_fusion_mode():
         assert root["stores"] == ["mem", "loci"]
 
 
-def test_configure_updates_authority_and_edges():
+def test_configure_updates_edges_and_reports_the_removed_knob_as_ignored():
     app = create_app(config=_cfg(), transport=FakeTransport())
     with TestClient(app) as client:
         r = client.post("/configure", json={
@@ -86,7 +85,8 @@ def test_configure_updates_authority_and_edges():
         })
         assert r.status_code == 200
         data = r.json()
-        assert data["changed"]["authority_margin"] == 0.1
+        assert "authority_margin" not in data["changed"]
+        assert data["ignored"]["authority_margin"].startswith("removed 7 Nov 2026")
         assert data["changed"]["min_per_store"] == 3
         assert data["changed"]["edges_enabled"] is False
         assert data["changed"]["edge_budget"] == 0

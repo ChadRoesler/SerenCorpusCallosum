@@ -85,7 +85,7 @@ def _store_row(s: StoreConfig, bound: set, skipped: dict) -> dict:
 # never mistake an ignored parameter for a finding. If you add a knob to
 # ConfigureRequest, add it here. An honest capability list is the whole point.
 SUPPORTED_KNOBS = [
-    "k", "rrf_k", "fusion_mode", "authority_margin", "min_per_store",
+    "k", "rrf_k", "fusion_mode", "min_per_store",
     "edges_enabled", "edge_budget", "satellite_edges_enabled", "satellite_budget",
     "n_results", "fetch_multiplier", "budget_tokens",
     "per_store_timeout_s", "loci_weight", "loci_floor",

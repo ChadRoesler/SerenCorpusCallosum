@@ -10,10 +10,9 @@ simulates a store getting a new embedder (its relevance magnitudes shift
 wildly) and proves the merged ranking is identical, because fusion reads
 rank, never magnitude.
 
-The authority/keystone block (added after the trust pass) covers the code
-that actually RESHAPES the docket - most-confident-store promotion, the lone
-exact-key lead, and the percentile / rrf_pct modes - including the cases where
-promotion genuinely MOVES a hit (the branch the original suite never hit).
+The N-store modes block covers percentile / rrf_pct and the per-store quota.
+The authority promotion that used to be tested here was removed on 7 Nov 2026
+(it never fired in 1,152 measured combinations); rank and weight are the merge.
 """
 from __future__ import annotations
 
@@ -28,8 +27,6 @@ from seren_corpus_callosum.fusion import (  # noqa: E402
     apply_floor,
     base_relevance_from_distance,
     rrf_fuse,
-    _store_margin,
-    _most_confident_store,
     _trim_with_quota,
     _VALID_FUSION_MODES,
 )
@@ -123,100 +120,37 @@ def test_n_results_trim():
 
 
 # ═════════════════════════════════════════════════════════════════════════
-# Authority + keystone + N-store modes - the docket-RESHAPING code. Previously
-# default-on (authority_margin=0.035) but exercised only in states where it was
-# a no-op, so its reorder branch was never covered. These hit it for real.
-# ════════════════════════════════════════════════════════════════════════
+# N-store modes, and the merge that is rank and weight only. The authority
+# promotion that used to live here was removed 7 Nov 2026 (it never fired in
+# 1,152 measured combinations on five corpora); the fuse has no such parameter.
+# ═════════════════════════════════════════════════════════════════════════
 
 
-def test_store_margin_regimes():
-    # Ordinary top: confidence is the gap to the runner-up.
-    m = _store_margin([_hit("L", "x", 0.80), _hit("L", "y", 0.50)])
-    assert abs(m - 0.30) < 1e-9
-    # Lone perfect (exact-key 1.0): max-confidence ON ITS OWN MERIT - the keystone.
-    assert _store_margin([_hit("L", "exact", 1.0)]) == 1.0
-    # Lone non-perfect: sparse, not confident -> abstains.
-    assert _store_margin([_hit("L", "meh", 0.45)]) is None
-    # Empty -> None.
-    assert _store_margin([]) is None
-    # Perfect top WITH a runner-up: still max (own merit), not the 0.4 gap.
-    assert _store_margin([_hit("L", "exact", 1.0), _hit("L", "y", 0.6)]) == 1.0
-
-
-def test_most_confident_store_picks_widest_margin():
-    a = [_hit("A", "a1", 0.9), _hit("A", "a2", 0.85)]   # margin 0.05
-    b = [_hit("B", "b1", 0.9), _hit("B", "b2", 0.50)]   # margin 0.40
-    assert _most_confident_store({"A": a, "B": b}, 0.035) == "B"
-    # Nobody clears a high threshold -> None.
-    assert _most_confident_store({"A": a, "B": b}, 0.95) is None
-
-
-def test_authority_disabled_is_plain_rrf():
-    # margin <= 0 must be byte-identical to the original rank-only RRF.
+def test_plain_rrf_interleaves_by_store_order_then_rank():
     a = [_hit("A", "a1", 0.60), _hit("A", "a2", 0.58)]
     b = [_hit("B", "b1", 0.95), _hit("B", "b2", 0.40)]
-    off = _order(rrf_fuse({"A": a, "B": b}, k=60, authority_margin=0.0))
-    default = _order(rrf_fuse({"A": a, "B": b}, k=60))   # default authority_margin=0.0
-    assert off == default == ["A:a1", "B:b1", "A:a2", "B:b2"]
+    assert _order(rrf_fuse({"A": a, "B": b}, k=60)) == ["A:a1", "B:b1", "A:a2", "B:b2"]
 
 
-def test_authority_promotes_buried_confident_top():
-    # THE branch the old suite never hit. A is iterated first (so A:a1 wins the
-    # rank-1 tie under plain RRF), but B is the clearly-confident store. With
-    # authority on, B's top is promoted to lead; the prior leader rides behind.
-    a = [_hit("A", "a1", 0.60), _hit("A", "a2", 0.58)]   # margin 0.02 - guessing
-    b = [_hit("B", "b1", 0.95), _hit("B", "b2", 0.40)]   # margin 0.55 - clear winner
-    plain = _order(rrf_fuse({"A": a, "B": b}, k=60))
-    assert plain[0] == "A:a1"                             # iteration order leads
-    auth = _order(rrf_fuse({"A": a, "B": b}, k=60, authority_margin=0.035))
-    assert auth[0] == "B:b1"                              # confident top promoted
-    assert auth[1] == "A:a1"                              # context rides right behind
-
-
-def test_lone_exact_key_hit_leads():
-    # The keystone, end to end: a store with a SINGLE exact-key hit (base 1.0 -
-    # "here's exactly how it's called") leads the packet even though it arrives
-    # alone with no runner-up to form a gap. The most authoritative signal there
-    # is must be eligible to lead.
+def test_magnitude_never_promotes_a_confident_store():
+    # The removed authority rule would have led with B:b1 here (margin 0.55) and
+    # with loci's exact-key hit below. Rank and weight are the whole merge: the
+    # rank-1 tie breaks on store order, and a lead is bought with weight, not score.
+    a = [_hit("A", "a1", 0.60), _hit("A", "a2", 0.58)]
+    b = [_hit("B", "b1", 0.95), _hit("B", "b2", 0.40)]
+    assert _order(rrf_fuse({"A": a, "B": b}, k=60))[0] == "A:a1"
     fact = [_hit("loci", "exact", 1.0)]
     episodes = [_hit("mem", "e1", 0.70), _hit("mem", "e2", 0.66)]
-    fused = _order(rrf_fuse({"mem": episodes, "loci": fact}, k=60,
-                            authority_margin=0.035))
-    assert fused[0] == "loci:exact"
+    assert _order(rrf_fuse({"mem": episodes, "loci": fact}, k=60))[0] == "mem:e1"
+    assert _order(rrf_fuse({"mem": episodes, "loci": fact}, k=60, weights={"loci": 1.5}))[0] == "loci:exact"
 
 
-def test_lone_weak_hit_does_not_lead():
-    # The other side of the keystone: a lone NON-perfect hit is just sparse, not
-    # authoritative, so it abstains and does NOT jump the queue.
-    weak = [_hit("loci", "meh", 0.45)]
-    episodes = [_hit("mem", "e1", 0.70), _hit("mem", "e2", 0.50)]
-    plain = _order(rrf_fuse({"mem": episodes, "loci": weak}, k=60))
-    auth = _order(rrf_fuse({"mem": episodes, "loci": weak}, k=60,
-                           authority_margin=0.035))
-    assert auth == plain
-    assert auth[0] == "mem:e1"
-
-
-def test_exact_key_outranks_merely_confident_store():
-    # New precedence: a near-perfect top (exact-key 1.0) is max-confident on its
-    # own merit, so it beats a store with a merely-wide gap. "Here's exactly how
-    # it's called" leads over "I'm fairly sure about this episode."
-    fact = [_hit("loci", "exact", 1.0), _hit("loci", "near", 0.80)]
-    episodes = [_hit("mem", "e1", 0.90), _hit("mem", "e2", 0.20)]   # margin 0.70
-    fused = _order(rrf_fuse({"mem": episodes, "loci": fact}, k=60,
-                            authority_margin=0.035))
-    assert fused[0] == "loci:exact"
-
-
-def test_authority_defers_to_weight_gap():
-    # Weight sets the pecking order; authority only breaks a TIE for the lead.
-    # If an operator weighted A up enough to STRICTLY outscore the confident
-    # store's top, that deliberate trust wins - authority defers.
-    a = [_hit("A", "a1", 0.50)]                              # weighted up
-    b = [_hit("B", "b1", 0.99), _hit("B", "b2", 0.30)]      # confident (margin 0.69)
-    fused = _order(rrf_fuse({"A": a, "B": b}, k=60, weights={"A": 2.0},
-                            authority_margin=0.035))
-    assert fused[0] == "A:a1"
+def test_the_fuse_has_no_authority_parameter():
+    try:
+        rrf_fuse({"A": [_hit("A", "a1", 0.6)]}, k=60, authority_margin=0.035)
+    except TypeError:
+        return
+    raise AssertionError("rrf_fuse still accepts authority_margin")
 
 
 def test_percentile_mode_orders_by_intra_store_position():
@@ -333,15 +267,14 @@ def test_quota_best_effort_when_too_few_seats():
     assert "C:c1" not in quota
 
 
-def test_quota_preserves_authority_lead():
-    # Authority promotes loci's exact-key to lead; the quota trim must keep it
-    # first AND still seat the other class.
+def test_quota_keeps_a_weighted_lead_and_still_seats_the_other_store():
+    # A lead bought with weight survives the quota trim AND the other class is seated.
     mem = [_hit("mem", "m1", 0.70), _hit("mem", "m2", 0.66)]
     loci = [_hit("loci", "exact", 1.0)]
-    fused = _order(rrf_fuse({"mem": mem, "loci": loci}, k=60,
-                            authority_margin=0.035, n_results=2, min_per_store=1))
-    assert fused[0] == "loci:exact"      # authority lead survives the quota
-    assert "mem:m1" in fused             # other class still seated
+    fused = _order(rrf_fuse({"mem": mem, "loci": loci}, k=60, weights={"loci": 1.5},
+                            n_results=2, min_per_store=1))
+    assert fused[0] == "loci:exact"
+    assert "mem:m1" in fused
 
 
 def test_quota_min_per_store_two_seats_two_each():

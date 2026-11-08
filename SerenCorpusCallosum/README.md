@@ -35,7 +35,7 @@ The `Federation` class owns the fan-out. On a search request it:
 2. **Floors** - discards hits whose `base_relevance` is below the store's configured floor *before* ranking.
 3. **Ranks** - sorts each store's survivors by native score descending, assigns rank order.
 4. **Fuses** - applies RRF across all stores: `Σ weight / (k + rank_in_store)`.
-5. **Applies authority margin** - if `authority_margin > 0`, an exact-key hit (native_score = 1.0) gets boosted above the #1 RRF-ranked result by that margin.
+5. **Ranks by rank and weight only.** The authority margin that used to sit here (a clearly-confident store's top hit promoted to lead) was removed on 7 Nov 2026: measured in Probe's harness across 1,152 knob combinations on five corpora, it never changed a packet, because 1/(1+d) squeezes MiniLM's useful range into 0.45 to 0.59 and no store ever looks confident. A config or `/configure` body that still names `authority_margin` is warned about and the key ignored (`/configure` answers with it under `ignored`).
 6. **Truncates** - returns the top `n_results`; or, with `budget_tokens` (the request's, else `federation.budget_tokens`), **packs a page**: every row that fits in that many estimated tokens, in fused order, `min_per_store` seating each store on the page, an oversize row skipped rather than ending the page, and the edges and hop hits below packed into what is left. The response reports `budget_tokens` and the packet's estimated `tokens`.
 
 A slow or down store degrades the result but never takes the call down with it - and the response says so: `stores_searched` is the stores that answered (an empty answer counts), `failed` names each store that was fanned and did not answer with why (timeout, refused, an HTTP error), and `skipped` is a store that was never bound (a config error). A timeout and "knows nothing" are different facts.
@@ -80,7 +80,6 @@ POST /configure
 {
   "k": 30,
   "fusion_mode": "rrf_pct",
-  "authority_margin": 0.1,
   "min_per_store": 3,
   "edges_enabled": false,
   "edge_budget": 0,
@@ -123,7 +122,7 @@ vendored in `viewer/vendor/` and served under `/viewer/` like the page.
 |-----------|----------------|
 | `tests/test_app.py` | 5 tests - HTTP search route, health/root, bearer auth, unknown-store survival, config loading from defaults/env |
 | `tests/test_federation.py` | 9 tests - fan across stores, dead/slow store graceful degradation, per-store floor, weight-based ranking, unknown-store skip, empty config |
-| `tests/test_fusion.py` | 28 tests - RRF fusion, embedder-agnostic ranking, percentile/rrf_pct modes, authority margin, exact-key promotion, per-store quota/min_per_store |
+| `tests/test_fusion.py` | 28 tests - RRF fusion, embedder-agnostic ranking, percentile/rrf_pct modes, per-store quota/min_per_store |
 | `tests/test_edges.py` | 7 tests - topic-association edges appended after fusion, edge budget cap, disabled mode, Loci skipped (no topics), failure degrades gracefully |
 | `tests/test_adapters.py` | 6 tests - SerenMemory + SerenLoci adapter response mapping, search-path override, dispatch by type, empty/missing hits safe |
 | `tests/test_stores.py` | 10 tests - stores endpoint, bridge viewer, add/delete managed stores, unknown-type rejection, duplicate rejection, blank-field rejection, base-store delete refused, missing 404 |
@@ -132,7 +131,7 @@ vendored in `viewer/vendor/` and served under `/viewer/` like the page.
 | `tests/test_mcp_tools.py` | 4 tests - MCP search tool returns full provenance, surfaces skipped stores, default n_results |
 | `tests/test_honest_fan.py` | 13 tests - the over-fetch clamped to what a store accepts; stores_searched = answered and `failed` with why (route and MCP tool); the health record survives /configure and store changes; a new timeout reaches the transport; satellite and superseded-core edges |
 | `tests/test_exposure_is_wired.py` | 3 tests - a host beyond loopback with no bearer refuses to start |
-| `tests/test_configure.py` | 9 tests - federation-level knobs (k, fusion_mode, authority, edges, n_results, fetch, timeout), per-store weight/floor overrides, unknown store → 404, invalid fusion_mode → 422, empty body, partial updates keep untouched fields, bearer auth enforced |
+| `tests/test_configure.py` | 9 tests - federation-level knobs (k, fusion_mode, edges, n_results, fetch, timeout), per-store weight/floor overrides, unknown store → 404, invalid fusion_mode → 422, empty body, partial updates keep untouched fields, bearer auth enforced |
 
 ```bash
 pytest tests/

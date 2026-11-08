@@ -68,7 +68,7 @@ class ConfigureRequest(BaseModel):
     # Federation-level knobs
     k: Optional[int] = None
     fusion_mode: Optional[str] = None
-    authority_margin: Optional[float] = None
+    authority_margin: Optional[float] = None   # removed 7 Nov 2026: still accepted so an old caller gets a note, not a 422
     min_per_store: Optional[int] = None
     edges_enabled: Optional[bool] = None
     edge_budget: Optional[int] = None

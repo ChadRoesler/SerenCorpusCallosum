@@ -235,7 +235,6 @@ class Federation:
             # A page replaces the DEFAULT row cap; a caller's explicit n still caps.
             n_results=n if budget is None else n_results,
             fusion_mode=self._config.fusion_mode,
-            authority_margin=self._config.authority_margin,
             min_per_store=self._config.min_per_store,
             budget_tokens=budget,
         )

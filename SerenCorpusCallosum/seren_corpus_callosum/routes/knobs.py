@@ -26,7 +26,7 @@ from typing import Any
 from fastapi import APIRouter, Request
 
 from ..config import (
-    _DEFAULT_AUTHORITY_MARGIN, _DEFAULT_EDGE_BUDGET, _DEFAULT_EDGES_ENABLED, _DEFAULT_FETCH_MULTIPLIER,
+    _DEFAULT_EDGE_BUDGET, _DEFAULT_EDGES_ENABLED, _DEFAULT_FETCH_MULTIPLIER,
     _DEFAULT_FLOOR, _DEFAULT_FUSION_MODE, _DEFAULT_HOP_BUDGET, _DEFAULT_HOP_TERMS, _DEFAULT_HOPS, _DEFAULT_K,
     _DEFAULT_MIN_PER_STORE, _DEFAULT_N_RESULTS, _DEFAULT_SATELLITE_BUDGET, _DEFAULT_SATELLITE_EDGES,
     _DEFAULT_TIMEOUT_S, _DEFAULT_WEIGHT, FederationConfig, StoreConfig,
@@ -51,9 +51,6 @@ FEDERATION_KNOBS: list[tuple[str, Any, str]] = [
     ("k", _DEFAULT_K,
      "The RRF damping constant: a hit is worth weight / (k + rank). Lower lets rank 1 dominate, higher "
      "flattens the ranks so rank 1 and rank 5 count nearly the same. 60 is the textbook value."),
-    ("authority_margin", _DEFAULT_AUTHORITY_MARGIN,
-     "When one store's top hit is this much more confident than every other store's, it is promoted to rank 1 "
-     "whatever RRF says. 0 turns it off. Depends on the embedder; tune with brain_eval, not by eye."),
     ("min_per_store", _DEFAULT_MIN_PER_STORE,
      "Every store that answered keeps at least this many of its top hits through the final trim, so the packet "
      "stays a briefing (a fact and a scar) instead of all one kind. 0 is pure top-n."),

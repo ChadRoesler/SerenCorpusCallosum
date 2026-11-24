@@ -26,7 +26,7 @@ from typing import Any
 from fastapi import APIRouter, Request
 
 from ..config import (
-    _DEFAULT_EDGE_BUDGET, _DEFAULT_EDGES_ENABLED, _DEFAULT_FETCH_MULTIPLIER,
+    _DEFAULT_BUDGET_TOKENS, _DEFAULT_EDGE_BUDGET, _DEFAULT_EDGES_ENABLED, _DEFAULT_FETCH_MULTIPLIER,
     _DEFAULT_FLOOR, _DEFAULT_FUSION_MODE, _DEFAULT_HOP_BUDGET, _DEFAULT_HOP_TERMS, _DEFAULT_HOPS, _DEFAULT_K,
     _DEFAULT_MIN_PER_STORE, _DEFAULT_N_RESULTS, _DEFAULT_SATELLITE_BUDGET, _DEFAULT_SATELLITE_EDGES,
     _DEFAULT_TIMEOUT_S, _DEFAULT_WEIGHT, FederationConfig, StoreConfig,
@@ -41,6 +41,10 @@ router = APIRouter(tags=["knobs"])
 FEDERATION_KNOBS: list[tuple[str, Any, str]] = [
     ("n_results", _DEFAULT_N_RESULTS,
      "How many merged hits a search returns when the caller does not say."),
+    ("budget_tokens", _DEFAULT_BUDGET_TOKENS,
+     "The token knob. Set, every search that brings no budget of its own is packed to about this many tokens "
+     "(the ranked hits and their addenda, filled until the page is full) instead of cut at n_results rows. "
+     "Empty keeps the row count. A caller's own budget_tokens always wins."),
     ("fetch_multiplier", _DEFAULT_FETCH_MULTIPLIER,
      "Each store is asked for n_results times this, so the merge has candidates to choose from."),
     ("per_store_timeout_s", _DEFAULT_TIMEOUT_S,

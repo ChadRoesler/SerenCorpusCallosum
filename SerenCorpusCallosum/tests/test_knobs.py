@@ -75,6 +75,19 @@ def test_every_knob_has_its_three_values_and_a_sentence(tmp_path):
         assert "yaml is what comes back after a restart" in out["note"]
 
 
+def test_the_token_knob_is_on_the_board(tmp_path):
+    # budget_tokens shipped in config and /configure honoured it, but the Knobs tab
+    # never listed it (found 24 Nov 2026 while tuning against Probe): a knob nobody
+    # can see is a knob nobody turns.
+    with _client(tmp_path) as c:
+        by = {r["key"]: r for r in c.get("/knobs").json()["federation"]}
+        tok = by["budget_tokens"]
+        assert tok["default"] is None and tok["runtime_settable"] is True
+        assert c.post("/configure", json={"budget_tokens": 1500}).status_code == 200
+        tok = {r["key"]: r for r in c.get("/knobs").json()["federation"]}["budget_tokens"]
+        assert tok["live"] == 1500 and tok["is_default"] is False
+
+
 def test_a_configure_twiddle_shows_as_live_not_yaml(tmp_path):
     with _client(tmp_path) as c:
         assert c.post("/configure", json={"k": 25}).status_code == 200

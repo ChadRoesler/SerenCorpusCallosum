@@ -32,8 +32,9 @@ from dataclasses import dataclass
 from typing import Optional
 
 from .adapters import StoreAdapter, Transport, UnknownStoreType, build_adapter
+from .adapters import _loci_content as _cited_content   # a cited fact reads like any Loci hit: key = value because why
 from .config import FederationConfig
-from .fusion import FusedHit, Hit, apply_floor, fit_in_budget, packet_cost, row_cost, rrf_fuse
+from .fusion import FusedHit, Hit, apply_floor, fit_in_budget, pack_to_budget, packet_cost, row_cost, rrf_fuse
 from .health import HealthTracker
 
 # A search packed to a token budget needs enough candidates to fill the page,
@@ -66,6 +67,13 @@ class _BoundStore:
     adapter: StoreAdapter
     floor: float
     weight: float
+
+
+def _as_float(v) -> Optional[float]:
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return None
 
 
 def _split_topics(topic: Optional[str]) -> list[str]:
@@ -115,6 +123,12 @@ class Federation:
                 # /health-style introspection can surface it later.
                 self._skipped.append((cfg.name, str(e)))
                 continue
+            # The satellite knobs that are Memory's to answer (how many per
+            # core, in which order) ride to it through its adapter. An adapter
+            # that has no such ask (Loci) has no such attribute.
+            if hasattr(adapter, "surroundings_n"):
+                adapter.surroundings_n = getattr(config, "satellites_per_core", None)
+                adapter.surroundings_by = getattr(config, "satellite_order", None)
             self._stores.append(_BoundStore(adapter=adapter, floor=cfg.floor, weight=cfg.weight))
 
     @property
@@ -168,12 +182,25 @@ class Federation:
         if hops > 1 and fused:
             fused = await self._append_hop_hits(fused, query, n_results, hops, budget)
 
-        # A core's surroundings: its newest satellites and the core it
-        # superseded, which rode along inline on the hit. Appended as MARKED
-        # edges right after the ranked packet - they are the story behind a
-        # hit, not competitors for its slot. With the edges off the inline
-        # content is stripped and only the counts stay on the hit.
-        fused = self._append_satellite_edges(fused, budget)
+        # What rides WITH the rows, chosen FIRST, because on a page it needs
+        # room made for it: a page is packed full, so an edge told to fit in
+        # what is left never rides.
+        #   A fact's reasons: the facts it rests on (Loci citations, the
+        #   skyways). Measured 24 Nov 2026: citations at 0, 3 and 8 were
+        #   identical to the digit on a page, and took the blind skyway
+        #   questions from 0.03 to 1.00 on a row-count packet.
+        #   A core's surroundings: its satellites (the episodes behind it) and
+        #   the core it superseded. The story behind a hit, not competitors
+        #   for its slot. With satellite_share they get room the same way; at
+        #   0 they fit in what the page has left, as before.
+        # The lowest-ranked rows give up exactly what these cost, and nothing
+        # when no row brings any. Both rode along inline on the hit; off, the
+        # inline content is stripped and only the counts stay.
+        fused, satellites, reasons = self._make_room_for_edges(fused, budget, n_results)
+
+        # Marked edges after the ranked packet: the satellites, then the reasons.
+        fused = (fused + [FusedHit(hit=h, rrf_score=0.0, store_rank=i + 1) for i, h in enumerate(satellites)]
+                 + [FusedHit(hit=h, rrf_score=0.0, store_rank=i + 1) for i, h in enumerate(reasons)])
 
         # After the fan: append a small, MARKED addendum of topic-ASSOCIATION
         # edges - entries that share a topic tag with the packet but whose
@@ -348,25 +375,13 @@ class Federation:
             await self._health.record_failure(name, reason, lat)
             return name, [], reason
 
-    def _append_satellite_edges(self, fused: list[FusedHit],
-                                budget: Optional[int] = None) -> list[FusedHit]:
-        """Hang a core's surroundings off the packet as MARKED edges.
-
-        Every SerenMemory core hit may carry `surroundings` with `recent`
-        (its newest satellites: the episodes with their dates) and
-        `supersedes_entry` (the core it replaced). Those are lifted out of the
-        hit's metadata - the counts stay so the hit still says a story exists -
-        and appended after the ranked packet as edges: rrf_score 0.0, marked
-        source='satellite-edge' / 'supersedes-edge', `edge_of` naming the core.
-        The budget is spent round-robin across the packet's cores in packet
-        order, newest satellite first, so one well-evidenced core cannot crowd
-        the rest out. Edges never enter the floor or the fuse. On a page
-        (`budget`) an edge also has to fit in what the packet left of it."""
-        enabled = self._config.satellite_edges_enabled and self._config.satellite_budget > 0
-        count = self._config.satellite_budget if enabled else 0
-        room = self._remaining(fused, budget)
-        seen = {f.hit.id for f in fused}
-        queues: list[tuple[FusedHit, list[tuple[str, dict]]]] = []
+    @staticmethod
+    def _lift_surroundings(fused: list[FusedHit]) -> dict[tuple[str, str], list[tuple[str, dict]]]:
+        """Take every core hit's inline surroundings off its metadata (the
+        counts stay, so the hit still says a story exists) and hand them back
+        by (store, core id), each a queue in the order Memory sent them: its
+        satellites (`recent`), then the core it replaced (`supersedes_entry`)."""
+        lifted: dict[tuple[str, str], list[tuple[str, dict]]] = {}
         for f in fused:
             sur = (f.hit.metadata or {}).get("surroundings")
             if not isinstance(sur, dict):
@@ -377,24 +392,59 @@ class Federation:
             if isinstance(sup, dict):
                 q.append(("supersedes-edge", sup))
             if q:
-                queues.append((f, q))
+                lifted[(f.hit.store, f.hit.id)] = q
+        return lifted
+
+    def _pick_satellites(self, rows: list[FusedHit], lifted: dict[tuple[str, str], list[tuple[str, dict]]],
+                         count: Optional[int] = None, cap: Optional[int] = None,
+                         skip_riding: bool = False) -> list[Hit]:
+        """The surroundings that ride with `rows`, as MARKED edges: rrf_score
+        0.0 once wrapped, source='satellite-edge' / 'supersedes-edge', `edge_of`
+        naming the core. Round-robin across the packet's cores in packet order,
+        each core's own queue in the order Memory sent it, so one
+        well-evidenced core cannot crowd the rest out; none that is already a
+        row. `count` stops the pick at that many edges (satellite_budget, a
+        row-count packet), `cap` at that many tokens (a page). With
+        satellite_top > 0 only the top that-many CORES of the packet bring
+        theirs: a core far down the page is less likely to be what was asked
+        about. `skip_riding` leaves out an episode that already rides on its
+        core's row as matched_via: on a page that paid for room, the reader
+        has it once already. Edges never enter the floor or the fuse."""
+        top = max(0, getattr(self._config, "satellite_top", 0))
+        seen = {f.hit.id for f in rows}
+        if skip_riding:
+            for f in rows:
+                via = (f.hit.metadata or {}).get("matched_via")
+                if isinstance(via, dict) and via.get("id"):
+                    seen.add(str(via["id"]))
+        queues: list[tuple[Hit, list[tuple[str, dict]]]] = []
+        cores = 0
+        for f in rows:
+            if not isinstance((f.hit.metadata or {}).get("surroundings"), dict):
+                continue                              # not a core row (a fact, a short, an edge)
+            cores += 1
+            if top and cores > top:
+                break
+            q = lifted.get((f.hit.store, f.hit.id))
+            if q:
+                queues.append((f.hit, list(q)))
         edges: list[Hit] = []
-        while queues and len(edges) < count and (room is None or room > 0):
-            nxt: list[tuple[FusedHit, list[tuple[str, dict]]]] = []
-            for f, q in queues:
-                if len(edges) >= count:
+        spent = 0
+        while queues and (count is None or len(edges) < count) and (cap is None or spent < cap):
+            nxt: list[tuple[Hit, list[tuple[str, dict]]]] = []
+            for core, q in queues:
+                if count is not None and len(edges) >= count:
                     break
                 kind, r = q.pop(0)
                 rid = str(r.get("id") or "")
                 if rid and rid not in seen:
                     seen.add(rid)
-                    core = f.hit
                     edge = Hit(
                         store=core.store,
                         id=rid,
                         content=str(r.get("content") or ""),
                         base_relevance=0.0,          # here by association with the core, not by cosine
-                        raw_distance=None,
+                        raw_distance=_as_float(r.get("raw_distance")),   # set when Memory sent it in match order: display only
                         native_score=None,
                         metadata={
                             "tier": "long",
@@ -408,14 +458,156 @@ class Federation:
                         },
                     )
                     cost = row_cost(edge)
-                    if room is None or cost <= room:
+                    if cap is None or spent + cost <= cap:
                         edges.append(edge)
-                        if room is not None:
-                            room -= cost
+                        spent += cost
                 if q:
-                    nxt.append((f, q))
+                    nxt.append((core, q))
             queues = nxt
-        return fused + [FusedHit(hit=h, rrf_score=0.0, store_rank=i + 1) for i, h in enumerate(edges)]
+        return edges
+
+    @staticmethod
+    def _lift_citations(fused: list[FusedHit]) -> dict[str, list[dict]]:
+        """Take every hit's inline `rests_on` off its metadata (a count stays)
+        and hand them back by the citing fact's id."""
+        cited: dict[str, list[dict]] = {}
+        for f in fused:
+            meta = f.hit.metadata or {}
+            got = meta.pop("rests_on", None)
+            if isinstance(got, list):
+                meta["rests_on_n"] = len(got)
+                q = [r for r in got if isinstance(r, dict) and r.get("id")]
+                if q:
+                    cited[f.hit.id] = q
+        return cited
+
+    def _pick_reasons(self, rows: list[FusedHit], cited: dict[str, list[dict]],
+                      cap: Optional[int] = None) -> list[Hit]:
+        """The cited facts that ride with `rows`: up to citation_budget of them,
+        round-robin across the citing facts in packet order, none that is
+        already a row. With citation_top > 0 only the top that-many FACTS of
+        the packet may bring their reasons: a fact far down the page is less
+        likely to be what was asked about, and its reasons cost room the
+        ranked rows could have had. `cap` stops the pick at that many tokens."""
+        count, top = self._config.citation_budget, max(0, getattr(self._config, "citation_top", 0))
+        seen = {f.hit.id for f in rows}
+        queues: list[tuple[Hit, list[dict]]] = []
+        facts = 0
+        for f in rows:
+            meta = f.hit.metadata or {}
+            if meta.get("key") is None or meta.get("project") is None:
+                continue                              # not a fact row (a memory, or an edge)
+            facts += 1
+            if top and facts > top:
+                break
+            if f.hit.id in cited:
+                queues.append((f.hit, list(cited[f.hit.id])))
+        edges: list[Hit] = []
+        spent = 0
+        while queues and len(edges) < count:
+            nxt: list[tuple[Hit, list[dict]]] = []
+            for fact, q in queues:
+                if len(edges) >= count:
+                    break
+                r = q.pop(0)
+                rid = str(r["id"])
+                if rid not in seen:
+                    edge = Hit(
+                        store=fact.store,
+                        id=rid,
+                        content=_cited_content(r),
+                        base_relevance=0.0,          # here because the fact rests on it, not by cosine
+                        raw_distance=None,
+                        native_score=None,
+                        metadata={
+                            "project": r.get("project"),
+                            "key": r.get("key"),
+                            "why": r.get("why"),
+                            "because": r.get("because"),
+                            "source": "citation-edge",
+                            "edge_of": fact.id,
+                        },
+                    )
+                    cost = row_cost(edge)
+                    if cap is None or spent + cost <= cap:
+                        seen.add(rid)
+                        edges.append(edge)
+                        spent += cost
+                if q:
+                    nxt.append((fact, q))
+            queues = nxt
+        return edges
+
+    def _make_room_for_edges(self, fused: list[FusedHit], budget: Optional[int],
+                             n_results: Optional[int] = None
+                             ) -> tuple[list[FusedHit], list[Hit], list[Hit]]:
+        """(the ranked rows, the satellites that ride with them, the reasons).
+
+        With no page there is nothing to make room in: both are appended past
+        the rows, as every edge is, the satellites capped by satellite_budget
+        and the reasons by citation_budget.
+
+        On a page the rows were packed FULL, so the lowest-ranked of them give
+        way until what rides fits: the page is re-packed to (budget - what the
+        edges cost), which keeps the diversity floor and the fused order.
+        Shrinking changes who is on the page (a cited fact that had been a row
+        goes back among the reasons, a core that gave way takes its satellites
+        with it), so the pick is taken again until it settles. The rows keep
+        at least half the page: the reasons may take up to half, and the
+        satellites up to satellite_share of it and never more than what the
+        reasons left of that half. A page whose rows bring nothing is returned
+        as it came.
+
+        satellite_share 0 is the behaviour before 24 Nov 2026 for satellites:
+        the reasons get their room, and up to satellite_budget satellites fit
+        in whatever the page has left after that."""
+        cfg = self._config
+        cited = self._lift_citations(fused)
+        lifted = self._lift_surroundings(fused)
+        cite_on = bool(cfg.citation_edges_enabled and cfg.citation_budget > 0 and cited)
+        sat_on = bool(cfg.satellite_edges_enabled and cfg.satellite_budget > 0 and lifted)
+        if not cite_on and not sat_on:
+            return fused, [], []
+
+        def cost(hits: list[Hit]) -> int:
+            return sum(row_cost(h) for h in hits)
+
+        if budget is None:
+            return (fused,
+                    self._pick_satellites(fused, lifted, count=cfg.satellite_budget) if sat_on else [],
+                    self._pick_reasons(fused, cited) if cite_on else [])
+
+        half = budget // 2
+        share = min(0.5, max(0.0, float(getattr(cfg, "satellite_share", 0.0) or 0.0)))
+        room_for_sats = sat_on and share > 0
+        rows = fused
+        satellites: list[Hit] = []
+        reasons: list[Hit] = []
+        settled = False
+        for _ in range(4):
+            reasons = self._pick_reasons(rows, cited, half) if cite_on else []
+            need = cost(reasons)
+            if room_for_sats:
+                satellites = self._pick_satellites(rows, lifted, cap=max(0, min(int(budget * share), half - need)),
+                                                   skip_riding=True)
+                need += cost(satellites)
+            if need <= budget - packet_cost(rows):
+                settled = True
+                break
+            rows = pack_to_budget(rows, budget - need, cfg.min_per_store, n_results)
+        left = max(0, budget - packet_cost(rows))
+        if not settled:
+            # four rounds did not settle it: take what fits in what there is
+            reasons = self._pick_reasons(rows, cited, min(half, left)) if cite_on else []
+            if room_for_sats:
+                satellites = self._pick_satellites(
+                    rows, lifted, cap=max(0, min(int(budget * share), half - cost(reasons), left - cost(reasons))),
+                    skip_riding=True)
+        if sat_on and not room_for_sats:
+            # no share: the count, and only what the rows and the reasons left
+            satellites = self._pick_satellites(rows, lifted, count=cfg.satellite_budget,
+                                               cap=max(0, left - cost(reasons)))
+        return rows, satellites, reasons
 
     async def _safe_topic_search(self, bound: _BoundStore, topics: list[str],
                                  n: int, exclude_ids: list[str]

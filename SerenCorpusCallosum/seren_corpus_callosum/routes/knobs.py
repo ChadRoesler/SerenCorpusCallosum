@@ -26,9 +26,11 @@ from typing import Any
 from fastapi import APIRouter, Request
 
 from ..config import (
-    _DEFAULT_BUDGET_TOKENS, _DEFAULT_EDGE_BUDGET, _DEFAULT_EDGES_ENABLED, _DEFAULT_FETCH_MULTIPLIER,
+    _DEFAULT_BUDGET_TOKENS, _DEFAULT_CITATION_BUDGET, _DEFAULT_CITATION_EDGES, _DEFAULT_CITATION_TOP,
+    _DEFAULT_EDGE_BUDGET, _DEFAULT_EDGES_ENABLED, _DEFAULT_FETCH_MULTIPLIER,
     _DEFAULT_FLOOR, _DEFAULT_FUSION_MODE, _DEFAULT_HOP_BUDGET, _DEFAULT_HOP_TERMS, _DEFAULT_HOPS, _DEFAULT_K,
     _DEFAULT_MIN_PER_STORE, _DEFAULT_N_RESULTS, _DEFAULT_SATELLITE_BUDGET, _DEFAULT_SATELLITE_EDGES,
+    _DEFAULT_SATELLITE_ORDER, _DEFAULT_SATELLITE_SHARE, _DEFAULT_SATELLITE_TOP, _DEFAULT_SATELLITES_PER_CORE,
     _DEFAULT_TIMEOUT_S, _DEFAULT_WEIGHT, FederationConfig, StoreConfig,
 )
 from .stores import SUPPORTED_KNOBS
@@ -68,7 +70,32 @@ FEDERATION_KNOBS: list[tuple[str, Any, str]] = [
      "superseded, marked satellite-edge / supersedes-edge, after the ranked hits."),
     ("satellite_budget", _DEFAULT_SATELLITE_BUDGET,
      "How many satellite entries may be appended in all, shared round-robin across the packet's cores so one busy "
-     "core cannot take them all."),
+     "core cannot take them all. A count: it is the cap on a row-count packet, and on a page whose "
+     "satellite_share is 0."),
+    ("satellite_share", _DEFAULT_SATELLITE_SHARE,
+     "On a page, the fraction of it a core's episodes may take. They are given room: the lowest-ranked rows give "
+     "up exactly what the episodes cost, so a bigger page brings more of them, and an episode already shown on "
+     "its core's row is not repeated. 0 keeps them to whatever the page has left, up to satellite_budget. "
+     "Never more than half a page, reasons included."),
+    ("satellite_top", _DEFAULT_SATELLITE_TOP,
+     "Only the top this-many cores of the packet bring their episodes; a core further down is less likely to be "
+     "what was asked about. 0 lets every core in the packet bring them."),
+    ("satellites_per_core", _DEFAULT_SATELLITES_PER_CORE,
+     "How many episodes Memory is asked to hand over for each core. A Memory from before 24 Nov 2026 sends "
+     "three whatever is asked."),
+    ("satellite_order", _DEFAULT_SATELLITE_ORDER,
+     "Which of a core's episodes come first. recent: the newest. match: the ones that matched the question, "
+     "nearest first, then the newest. A Memory from before 24 Nov 2026 sends the newest whatever is asked."),
+    ("citation_edges_enabled", _DEFAULT_CITATION_EDGES,
+     "A fact in the packet brings the facts it rests on (its Loci citations, the skyways), as they read now, "
+     "marked citation-edge, after the satellites: the reason a fact holds, handed over with it."),
+    ("citation_budget", _DEFAULT_CITATION_BUDGET,
+     "How many cited facts may be appended in all, shared round-robin across the packet's facts so one fact "
+     "resting on many cannot take them all."),
+    ("citation_top", _DEFAULT_CITATION_TOP,
+     "Only the top this-many facts of the packet bring their reasons; a fact further down is less likely to be "
+     "what was asked about. 0 lets every fact in the packet bring them. On a page the reasons are given room: "
+     "the lowest-ranked rows give up exactly what the reasons cost."),
     ("hops", _DEFAULT_HOPS,
      "Retrieval rounds. 1 is one pass. 2 lifts bridge terms from what round one found and fans them again, which "
      "reaches an answer that shares no word with the question. Costs a second fan; never on by accident."),

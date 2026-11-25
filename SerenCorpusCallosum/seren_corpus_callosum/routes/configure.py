@@ -63,6 +63,25 @@ async def configure(request: Request, params: ConfigureRequest = Body(...)) -> d
         cfg.satellite_edges_enabled = params.satellite_edges_enabled
     if params.satellite_budget is not None:
         cfg.satellite_budget = max(0, params.satellite_budget)
+    if params.satellite_share is not None:
+        from ..config import clamp_satellite_share
+        cfg.satellite_share = clamp_satellite_share(params.satellite_share)
+    if params.satellite_top is not None:
+        cfg.satellite_top = max(0, params.satellite_top)
+    if params.satellites_per_core is not None:
+        cfg.satellites_per_core = max(0, params.satellites_per_core)
+    if params.satellite_order is not None:
+        from ..config import _VALID_SATELLITE_ORDERS
+        if params.satellite_order not in _VALID_SATELLITE_ORDERS:
+            raise HTTPException(
+                422, f"unknown satellite_order {params.satellite_order!r}; valid: {list(_VALID_SATELLITE_ORDERS)}")
+        cfg.satellite_order = params.satellite_order
+    if params.citation_edges_enabled is not None:
+        cfg.citation_edges_enabled = params.citation_edges_enabled
+    if params.citation_budget is not None:
+        cfg.citation_budget = max(0, params.citation_budget)
+    if params.citation_top is not None:
+        cfg.citation_top = max(0, params.citation_top)
     if params.n_results is not None:
         cfg.n_results = params.n_results
     if params.fetch_multiplier is not None:
@@ -123,6 +142,15 @@ async def configure(request: Request, params: ConfigureRequest = Body(...)) -> d
         changed["satellite_edges_enabled"] = cfg.satellite_edges_enabled
     if params.satellite_budget is not None:
         changed["satellite_budget"] = cfg.satellite_budget
+    for knob in ("satellite_share", "satellite_top", "satellites_per_core", "satellite_order"):
+        if getattr(params, knob) is not None:
+            changed[knob] = getattr(cfg, knob)
+    if params.citation_edges_enabled is not None:
+        changed["citation_edges_enabled"] = cfg.citation_edges_enabled
+    if params.citation_budget is not None:
+        changed["citation_budget"] = cfg.citation_budget
+    if params.citation_top is not None:
+        changed["citation_top"] = cfg.citation_top
     if params.n_results is not None:
         changed["n_results"] = cfg.n_results
     if params.fetch_multiplier is not None:

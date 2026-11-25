@@ -74,6 +74,16 @@ class ConfigureRequest(BaseModel):
     edge_budget: Optional[int] = None
     satellite_edges_enabled: Optional[bool] = None
     satellite_budget: Optional[int] = None
+    # Satellites get room on a page (24 Nov 2026): the share of a page they may
+    # take (0 = fit in what is left), the top-N cores that may bring them (0 =
+    # all), how many Memory is asked for per core, and "recent" or "match".
+    satellite_share: Optional[float] = None
+    satellite_top: Optional[int] = None
+    satellites_per_core: Optional[int] = None
+    satellite_order: Optional[str] = None
+    citation_edges_enabled: Optional[bool] = None
+    citation_budget: Optional[int] = None
+    citation_top: Optional[int] = None
     n_results: Optional[int] = None
     fetch_multiplier: Optional[int] = None
     per_store_timeout_s: Optional[float] = None

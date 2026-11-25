@@ -54,10 +54,27 @@ _DEFAULT_EDGES_ENABLED = True   # append topic-association edges to the packet a
 _DEFAULT_EDGE_BUDGET = 3        # max association edges appended (a small, bounded addendum on top of n_results)
 _DEFAULT_SATELLITE_EDGES = True  # a core hit brings its newest satellites and the core it superseded along
 _DEFAULT_SATELLITE_BUDGET = 3    # max satellite / superseded entries appended (round-robin across the packet's cores)
+_DEFAULT_SATELLITE_SHARE = 0.0   # the share of a PAGE satellites may take, room made for them; 0 = they fit in what the page has left (the behaviour before 24 Nov 2026)
+_DEFAULT_SATELLITE_TOP = 0       # only the top N cores of the packet bring satellites; 0 = every core may
+_DEFAULT_SATELLITES_PER_CORE = 3  # how many satellites Memory is asked to hand over per core
+_DEFAULT_SATELLITE_ORDER = "recent"  # which satellites: "recent" (newest) or "match" (the ones the question matched)
+_VALID_SATELLITE_ORDERS = ("recent", "match")
+_MAX_SATELLITE_SHARE = 0.5       # rows keep at least half a page: past that it is more footnote than answer
+_DEFAULT_CITATION_EDGES = True   # a fact hit brings the facts it rests on (Loci citations). On like the satellites, Chad's call 24 Nov 2026 once it was measured
+_DEFAULT_CITATION_BUDGET = 3     # max cited facts appended (round-robin across the packet's facts)
+_DEFAULT_CITATION_TOP = 5        # only the top N facts of the packet bring their reasons; 0 = every fact may. Measured 24 Nov 2026 (Vellmarch, 44 skyway questions): top 5 found every answer the walk can; no gate cost the epithet set two questions on a 4k page
 _DEFAULT_HOPS = 1               # retrieval ROUNDS. 1 = single pass (today). 2 = one hop. Nano pays nothing at 1.
 _DEFAULT_HOP_TERMS = 4          # bridge terms lifted from round-1 to query round-2 (cheap: no LLM in the loop)
 _DEFAULT_HOP_BUDGET = 5         # max hop hits appended (bounded addendum, like edges - never competes for the n_results slots)
 _DEFAULT_BUDGET_TOKENS = None   # default page size in estimated tokens; None = the n_results packet (a caller's budget_tokens always wins)
+
+
+def clamp_satellite_share(v: Any) -> float:
+    """A share of a page, held to 0 .. one half. Anything unreadable is 0 (off)."""
+    try:
+        return min(_MAX_SATELLITE_SHARE, max(0.0, float(v)))
+    except (TypeError, ValueError):
+        return 0.0
 
 
 @dataclass
@@ -170,6 +187,48 @@ class FederationConfig:
     # round-robin across the packet's cores so one busy core cannot take it all.
     satellite_edges_enabled: bool = _DEFAULT_SATELLITE_EDGES
     satellite_budget: int = _DEFAULT_SATELLITE_BUDGET
+    # SATELLITES GET ROOM ON A PAGE (24 Nov 2026), the treatment the reasons got
+    # the same afternoon. satellite_budget is a COUNT, three for the whole
+    # packet however big the page, and on a page those three had to fit in
+    # what the rows left: on the Vellmarch ladder detail questions scored the
+    # same at 1,000 and 4,000 tokens on every rung (0.62 / 0.62 at the base).
+    # Chad: "we dont token budget but result count budget".
+    #   satellite_share     the fraction of a page satellites may take. They are
+    #                       picked FIRST and the lowest-ranked rows give way for
+    #                       exactly what they cost; the count does not apply.
+    #                       0 keeps the old behaviour. Capped at one half, and
+    #                       satellites and reasons together never pass half a page.
+    #   satellite_top       only the top N cores of the packet bring satellites
+    #                       (Chad's top-X, as citation_top). 0 = every core.
+    #   satellites_per_core how many Memory is asked for per core (it sent 3).
+    #   satellite_order     "recent": the newest. "match": the episodes that
+    #                       matched the question, nearest first (Memory's
+    #                       surroundings_by). An older Memory ignores both asks.
+    # On a page with a share, an episode already riding ON its core's row (the
+    # one it matched through) is not repeated as an edge.
+    satellite_share: float = _DEFAULT_SATELLITE_SHARE
+    satellite_top: int = _DEFAULT_SATELLITE_TOP
+    satellites_per_core: int = _DEFAULT_SATELLITES_PER_CORE
+    satellite_order: str = _DEFAULT_SATELLITE_ORDER
+    # FACT -> FACT edges (24 Nov 2026), the satellites' twin on the rigid side.
+    # A Loci fact can rest on others (a citation: "this holds because that
+    # does"). With this on, the fan asks Loci for each hit's citations inline
+    # and appends the cited facts, as they read now, as MARKED edges
+    # (source='citation-edge', edge_of naming the fact that cites them) after
+    # the satellites and before the topic edges; the budget is shared
+    # round-robin across the packet's facts. ON by default since 24 Nov 2026,
+    # as the satellites are (Chad: "we follow suit with what we got with sats
+    # since wed want a good base for it"): scored on Vellmarch's 44 skyway
+    # questions it took a 1,000-token page from 0.43 to 1.00 with the top five
+    # facts' reasons and moved no ordinary set. A store with no citations, or a
+    # Loci from before them, sends none and the packet is what it was.
+    citation_edges_enabled: bool = _DEFAULT_CITATION_EDGES
+    citation_budget: int = _DEFAULT_CITATION_BUDGET
+    # Chad, 24 Nov 2026: "do we do a limit of topX loci facts get their reasons? and
+    # the weaker ones dont?" A relevance gate, not only a cap: a fact far down the
+    # packet is less likely to be what was asked about, and on a page its reasons
+    # cost room the ranked rows could have had. 0 = no gate.
+    citation_top: int = _DEFAULT_CITATION_TOP
     # MULTI-HOP retrieval. Fusion reorders a packet; it CANNOT add a document
     # retrieval never returned - so a question whose answer shares no term with
     # the query ('supply chain for asper-k1' -> Sigma-Aldrich, which lives on
@@ -231,6 +290,11 @@ class FederationConfig:
         if "authority_margin" in d:
             log.warning("federation.authority_margin was removed on 7 Nov 2026 (measured: it never "
                         "changed a packet); the key is ignored")
+        order = str(d.get("satellite_order", _DEFAULT_SATELLITE_ORDER))
+        if order not in _VALID_SATELLITE_ORDERS:
+            log.warning("unknown satellite_order %r in federation config (known: %s); falling back to %r",
+                        order, list(_VALID_SATELLITE_ORDERS), _DEFAULT_SATELLITE_ORDER)
+            order = _DEFAULT_SATELLITE_ORDER
         return cls(
             stores=stores,
             k=int(d.get("k", _DEFAULT_K)),
@@ -243,6 +307,13 @@ class FederationConfig:
             edge_budget=int(d.get("edge_budget", _DEFAULT_EDGE_BUDGET)),
             satellite_edges_enabled=bool(d.get("satellite_edges_enabled", _DEFAULT_SATELLITE_EDGES)),
             satellite_budget=int(d.get("satellite_budget", _DEFAULT_SATELLITE_BUDGET)),
+            satellite_share=clamp_satellite_share(d.get("satellite_share", _DEFAULT_SATELLITE_SHARE)),
+            satellite_top=max(0, int(d.get("satellite_top", _DEFAULT_SATELLITE_TOP))),
+            satellites_per_core=max(0, int(d.get("satellites_per_core", _DEFAULT_SATELLITES_PER_CORE))),
+            satellite_order=order,
+            citation_edges_enabled=bool(d.get("citation_edges_enabled", _DEFAULT_CITATION_EDGES)),
+            citation_budget=max(0, int(d.get("citation_budget", _DEFAULT_CITATION_BUDGET))),
+            citation_top=max(0, int(d.get("citation_top", _DEFAULT_CITATION_TOP))),
             hops=max(1, int(d.get("hops", _DEFAULT_HOPS))),          # < 1 is meaningless; clamp, never crash
             hop_terms=int(d.get("hop_terms", _DEFAULT_HOP_TERMS)),
             hop_budget=int(d.get("hop_budget", _DEFAULT_HOP_BUDGET)),

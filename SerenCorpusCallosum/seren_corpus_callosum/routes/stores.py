@@ -87,6 +87,8 @@ def _store_row(s: StoreConfig, bound: set, skipped: dict) -> dict:
 SUPPORTED_KNOBS = [
     "k", "rrf_k", "fusion_mode", "min_per_store",
     "edges_enabled", "edge_budget", "satellite_edges_enabled", "satellite_budget",
+    "satellite_share", "satellite_top", "satellites_per_core", "satellite_order",
+    "citation_edges_enabled", "citation_budget", "citation_top",
     "n_results", "fetch_multiplier", "budget_tokens",
     "per_store_timeout_s", "loci_weight", "loci_floor",
     "hops", "hop_terms", "hop_budget",
@@ -110,6 +112,13 @@ async def list_stores(request: Request) -> dict:
         "hop_budget": cfg.federation.hop_budget,
         "satellite_edges_enabled": cfg.federation.satellite_edges_enabled,
         "satellite_budget": cfg.federation.satellite_budget,
+        "satellite_share": cfg.federation.satellite_share,
+        "satellite_top": cfg.federation.satellite_top,
+        "satellites_per_core": cfg.federation.satellites_per_core,
+        "satellite_order": cfg.federation.satellite_order,
+        "citation_edges_enabled": cfg.federation.citation_edges_enabled,
+        "citation_budget": cfg.federation.citation_budget,
+        "citation_top": cfg.federation.citation_top,
         "types": sorted(known_store_types()),  # for the UI's type dropdown
         "supported_knobs": SUPPORTED_KNOBS,    # what /configure will actually honor
     }

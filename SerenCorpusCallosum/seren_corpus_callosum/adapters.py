@@ -80,6 +80,15 @@ class _BaseAdapter:
         _tok = cfg.resolve_token()
         self._auth_headers: Optional[dict[str, str]] = (
             {"Authorization": f"Bearer {_tok}"} if _tok else None)
+        # options.max_n: this store's row ceiling, when it is not the one its
+        # protocol shipped with (a Memory that takes 200 rows since 24 Nov
+        # 2026). Stated per store and never guessed: asking a store for more
+        # than it accepts is a 422, and the store drops out of the fan.
+        if cfg.options.get("max_n") is not None:
+            try:
+                self.max_n = max(1, int(cfg.options["max_n"]))
+            except (TypeError, ValueError):
+                pass
 
     @property
     def _search_url(self) -> str:
@@ -104,10 +113,22 @@ class SerenMemoryAdapter(_BaseAdapter):
 
     type = "seren_memory"
     default_topic_search_path = "/by_topic"
-    max_n = 50                      # SerenMemory SearchRequest: n_results le=50
+    # SerenMemory's SearchRequest took n_results le=50 until 24 Nov 2026 and
+    # takes 200 since. The DEFAULT stays 50: this adapter cannot tell which
+    # Memory it is talking to, and an older one answers 422 to an ask of 51.
+    # options.max_n raises it for a store known to be newer.
+    max_n = 50
     # off until the harness has scored it beside the old row shape (30 Oct 2026);
     # the decision is made, the default flips with the numbers
     _EPISODE_ROWS_DEFAULT = False
+    # How many satellites to ask for per core, and in which order. Set by the
+    # federation from its own knobs (satellites_per_core, satellite_order);
+    # options.surroundings_n / surroundings_by on the store win. Sent only when
+    # they differ from what Memory does unasked (3, "recent"), so the request a
+    # Memory from before the fields receives is byte for byte what it was; one
+    # that receives them and does not know them ignores them.
+    surroundings_n: Optional[int] = None
+    surroundings_by: Optional[str] = None
 
     async def search(self, query: str, n: int) -> list[Hit]:
         opts = self._cfg.options
@@ -125,6 +146,12 @@ class SerenMemoryAdapter(_BaseAdapter):
             # spares that Memory its long-tier read when the edges are off.
             "with_surroundings": bool(opts.get("with_surroundings", True)),
         }
+        per_core = opts.get("surroundings_n", self.surroundings_n)
+        order = opts.get("surroundings_by", self.surroundings_by)
+        if per_core is not None and int(per_core) != 3:
+            payload["surroundings_n"] = max(0, int(per_core))
+        if order and order != "recent":
+            payload["surroundings_by"] = str(order)
         resp = await self._transport.post_json(self._search_url, payload, headers=self._auth_headers)
         hits: list[Hit] = []
         for raw in (resp.get("hits") or []):
@@ -257,6 +284,12 @@ class SerenLociAdapter(_BaseAdapter):
             "n_results": n,
             "include_fundamentals": bool(opts.get("include_fundamentals", True)),
             "include_superseded": bool(opts.get("include_superseded", False)),
+            # What each fact rests on rides inline (Loci's citations, the facts
+            # as they read now) so the federation can hang them off the hit as
+            # citation edges with no second round-trip. A Loci older than
+            # 24 Nov 2026 ignores the field. options.with_citations: false
+            # spares Loci the read when the edges are off.
+            "with_citations": bool(opts.get("with_citations", True)),
         }
         # Optional project scope - None means "search every scope".
         if opts.get("project") is not None:
@@ -283,6 +316,8 @@ class SerenLociAdapter(_BaseAdapter):
                     "why": raw.get("why"),
                     "match_kind": raw.get("match_kind"),
                     "source": raw.get("source"),
+                    **({"rests_on": [dict(r) for r in raw["rests_on"] if isinstance(r, dict)]}
+                       if isinstance(raw.get("rests_on"), list) else {}),
                 },
             ))
         return hits

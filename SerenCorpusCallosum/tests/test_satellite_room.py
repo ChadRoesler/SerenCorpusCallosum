@@ -137,6 +137,21 @@ def test_a_full_page_makes_room_for_its_cores_episodes():
     assert "recent" not in core.metadata["surroundings"] and core.metadata["surroundings"]["satellites"] == 2
 
 
+def test_an_episode_that_repeats_a_row_word_for_word_does_not_ride():
+    # A core that was restated keeps its first wording as an episode. In match
+    # order that copy is the nearest thing to the question there is, so it was
+    # seated first, beside the row it copies (25 Nov 2026, seen on a real memory).
+    mem = _cores(sats={0: 3})
+    mem["hits"][0]["surroundings"]["recent"][0]["content"] = "  Core number 00 of the  chronicle of the realm "
+    page = _search(mem, 4000, satellite_share=0.3)
+    assert [e.id for e in _edges(page)] == ["s00.1", "s00.2"], "the copy stays home and the next episodes ride"
+    assert [e.id for e in _edges(_search(mem))] == ["s00.1", "s00.2"], "the same on a packet of rows, where it would cost one of the three"
+    twins = _cores(sats={0: 3})
+    twins["hits"][0]["surroundings"]["recent"][1]["content"] = twins["hits"][0]["surroundings"]["recent"][0]["content"]
+    assert [e.id for e in _edges(_search(twins, 4000, satellite_share=0.3))] == ["s00.0", "s00.2"], \
+        "nor two episodes with the same words"
+
+
 def test_a_page_with_no_satellites_gives_up_nothing():
     assert _rows(_search(_cores(), EIGHT, satellite_share=0.4)) == _rows(_search(_cores(), EIGHT))
 

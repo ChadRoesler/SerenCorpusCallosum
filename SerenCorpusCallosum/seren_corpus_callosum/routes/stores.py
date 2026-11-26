@@ -116,6 +116,7 @@ async def list_stores(request: Request) -> dict:
         "satellite_top": cfg.federation.satellite_top,
         "satellites_per_core": cfg.federation.satellites_per_core,
         "satellite_order": cfg.federation.satellite_order,
+        "fit": fed.fit.usual(),               # what each store's best hit usually looks like (fit.py)
         "citation_edges_enabled": cfg.federation.citation_edges_enabled,
         "citation_budget": cfg.federation.citation_budget,
         "citation_top": cfg.federation.citation_top,

@@ -34,7 +34,9 @@ from typing import Optional
 from .adapters import StoreAdapter, Transport, UnknownStoreType, build_adapter
 from .adapters import _loci_content as _cited_content   # a cited fact reads like any Loci hit: key = value because why
 from .config import FederationConfig
-from .fusion import FusedHit, Hit, apply_floor, fit_in_budget, pack_to_budget, packet_cost, row_cost, rrf_fuse
+from .fusion import (FusedHit, Hit, _trim_with_quota, apply_floor, fit_in_budget, pack_to_budget, packet_cost,
+                     row_cost, rrf_fuse)
+from .fit import FitTracker, best_distance
 from .health import HealthTracker
 
 # A search packed to a token budget needs enough candidates to fill the page,
@@ -67,6 +69,7 @@ class _BoundStore:
     adapter: StoreAdapter
     floor: float
     weight: float
+    habit_floor: float = 0.0     # options.habit_floor: rows this many spreads past the store's usual best are set aside (see _set_aside)
 
 
 def _as_float(v) -> Optional[float]:
@@ -74,6 +77,12 @@ def _as_float(v) -> Optional[float]:
         return float(v)
     except (TypeError, ValueError):
         return None
+
+
+def _same_words(text) -> str:
+    """A row's text with its spacing and case taken out: equal for two rows
+    that say the same thing word for word."""
+    return " ".join(str(text or "").split()).casefold()
 
 
 def _split_topics(topic: Optional[str]) -> list[str]:
@@ -108,10 +117,15 @@ class Federation:
     """
 
     def __init__(self, config: FederationConfig, transport: Transport,
-                 health_tracker: HealthTracker | None = None):
+                 health_tracker: HealthTracker | None = None, fit: FitTracker | None = None):
         self._config = config
         self._transport = transport
         self._health = health_tracker or HealthTracker()
+        # Each store's habit (fit.py): what its best hit usually looks like,
+        # learned from every question so a store that sets rows aside
+        # (options.habit_floor) does not start cold. Handed on across a
+        # /configure rebuild like the health tracker, for the same reason.
+        self._fit = fit or FitTracker()
         self._stores: list[_BoundStore] = []
         self._skipped: list[tuple[str, str]] = []  # (store_name, reason) - for diagnostics
 
@@ -129,7 +143,8 @@ class Federation:
             if hasattr(adapter, "surroundings_n"):
                 adapter.surroundings_n = getattr(config, "satellites_per_core", None)
                 adapter.surroundings_by = getattr(config, "satellite_order", None)
-            self._stores.append(_BoundStore(adapter=adapter, floor=cfg.floor, weight=cfg.weight))
+            self._stores.append(_BoundStore(adapter=adapter, floor=cfg.floor, weight=cfg.weight,
+                                            habit_floor=max(0.0, _as_float((cfg.options or {}).get("habit_floor")) or 0.0)))
 
     @property
     def store_names(self) -> list[str]:
@@ -139,6 +154,11 @@ class Federation:
     def health(self) -> HealthTracker:
         """The health tracker collecting per-store metrics."""
         return self._health
+
+    @property
+    def fit(self) -> FitTracker:
+        """Each store's habit: what its best hit usually looks like."""
+        return self._fit
 
     @property
     def skipped(self) -> list[tuple[str, str]]:
@@ -174,7 +194,7 @@ class Federation:
         """
         budget = self._budget(budget_tokens)
         outcome: dict[str, Optional[str]] = {}
-        fused = await self._fan(query, n_results, outcome, budget)
+        fused = await self._fan(query, n_results, outcome, budget, first=True)
 
         # MULTI-HOP: fusion reorders a packet; it cannot ADD a document retrieval
         # never returned. A second round can. Off by default (Nano floor).
@@ -224,13 +244,64 @@ class Federation:
         """Room left on the page after `fused`; None when there is no page."""
         return None if budget is None else max(0, budget - packet_cost(fused))
 
+    def _note_habit(self, lists: dict[str, list[Hit]]) -> None:
+        """Let each store's habit learn from this question: its best hit's
+        distance (fit.py). Called AFTER anything that reads the habit, so a
+        question is never held against itself."""
+        for name, hits in lists.items():
+            if hits:
+                self._fit.note(name, best_distance(hits))
+
+    def _set_aside(self, lists: dict[str, list[Hit]]) -> dict[str, list[Hit]]:
+        """{store: the rows it sets aside for this question}, for the stores
+        that asked (options.habit_floor, in spreads; 25 Nov 2026).
+
+        A store returns its top rows whether or not it has anything to say: on
+        one real page six of twelve rows were facts unrelated to the question,
+        each scored 0.93 by its store. Moving SEATS between stores by how close
+        each store's best hit came did not fix it (fit.py). This judges each
+        ROW instead: one sitting more than habit_floor spreads past its store's
+        own usual best hit is set aside, and leads nobody. It is not dropped:
+        it follows the rows that are inside their habit and rides whenever the
+        packet has room. A store's best row is never set aside, nor one with no
+        distance to judge, nor anything while the store has no habit yet.
+
+        Per store, and off unless asked, because it is only right for a store
+        whose ranking follows distance and a memory asked about what it holds.
+        Measured on Vellmarch's frozen answers: at 1.0 it would clear about
+        half of Loci's rows and lose 0 to 2 in 100 of its answers on ordinary
+        questions; the same floor on Memory, whose ranking deliberately departs
+        from distance, would lose 13 to 24 in 100. And where a question
+        describes a thing without naming it (the epithet set) the RIGHT fact
+        sits as far out as junk does: a floor at 1.0 would set aside half of
+        those answers. Distance cannot tell far-because-unrelated from
+        far-because-asked-sideways. So: a knob for a house, not a default."""
+        late: dict[str, list[Hit]] = {}
+        for bound in self._stores:
+            name, floor = bound.adapter.name, bound.habit_floor
+            hits = lists.get(name) or []
+            if floor <= 0 or len(hits) < 2:
+                continue
+            out = []
+            for h in hits[1:]:
+                c = self._fit.closeness(name, h.raw_distance)
+                if c is not None and c < -floor:
+                    h.metadata = {**(h.metadata or {}), "past_usual": round(-c, 2)}   # how far out, for whoever reads the packet
+                    out.append(h)
+            if out:
+                late[name] = out
+        return late
+
     async def _fan(self, query: str, n_results: Optional[int] = None,
                    outcome: Optional[dict[str, Optional[str]]] = None,
-                   budget: Optional[int] = None) -> list[FusedHit]:
+                   budget: Optional[int] = None,
+                   first: bool = False) -> list[FusedHit]:
         """ONE retrieval round: fan out, floor, fuse. The unit a hop repeats.
         `outcome`, when given, collects each store's result this round: None
         for answered, the reason for failed. `budget` packs the round to a
-        page (and sizes the ask to fill one) instead of trimming to n."""
+        page (and sizes the ask to fill one) instead of trimming to n. `first`
+        marks the first round of a search, never a hop's: the only round in
+        which a store sets rows aside and the only one its habit learns from."""
         if not self._stores:
             return []
 
@@ -255,16 +326,46 @@ class Federation:
             if outcome is not None:
                 outcome[name] = err
 
-        return rrf_fuse(
-            ranked_lists,
-            k=self._config.k,
-            weights=weights,
-            # A page replaces the DEFAULT row cap; a caller's explicit n still caps.
-            n_results=n if budget is None else n_results,
-            fusion_mode=self._config.fusion_mode,
-            min_per_store=self._config.min_per_store,
-            budget_tokens=budget,
-        )
+        # Rows a store was told to set aside (options.habit_floor) are read off
+        # BEFORE the habit learns from this question; hops never set aside.
+        late = self._set_aside(ranked_lists) if first else {}
+        if first:
+            self._note_habit(ranked_lists)
+
+        cap = n if budget is None else n_results     # a page replaces the DEFAULT row cap; a caller's explicit n still caps
+        if not late:
+            return rrf_fuse(
+                ranked_lists,
+                k=self._config.k,
+                weights=weights,
+                n_results=cap,
+                fusion_mode=self._config.fusion_mode,
+                min_per_store=self._config.min_per_store,
+                budget_tokens=budget,
+            )
+
+        # Two fuses, one packet: the rows inside their store's habit lead, in
+        # the turns RRF gives them; the rows set aside follow, in theirs, scored
+        # just under the lead's last row so the packet still falls from top to
+        # bottom. Then ONE trim or pack over the whole, so a set-aside row rides
+        # whenever there is room, and min_per_store still seats every store.
+        rank_of = {(name, h.id): i + 1 for name, hits in ranked_lists.items() for i, h in enumerate(hits)}
+        gone = {(name, h.id) for name, hits in late.items() for h in hits}
+        kept = {name: [h for h in hits if (name, h.id) not in gone] for name, hits in ranked_lists.items()}
+        lead = rrf_fuse(kept, k=self._config.k, weights=weights, fusion_mode=self._config.fusion_mode)
+        tail = rrf_fuse({name: late.get(name, []) for name in ranked_lists}, k=self._config.k, weights=weights,
+                        fusion_mode=self._config.fusion_mode)
+        low = min((f.rrf_score for f in lead), default=0.0)
+        high = max((f.rrf_score for f in tail), default=0.0)
+        if low > 0 and high > 0:
+            for f in tail:
+                f.rrf_score *= low / high * 0.999
+        fused = lead + tail
+        for f in fused:
+            f.store_rank = rank_of.get((f.hit.store, f.hit.id), f.store_rank)   # a row still says its own rank in its store
+        if budget is not None and budget > 0:
+            return pack_to_budget(fused, budget, self._config.min_per_store, cap)
+        return _trim_with_quota(fused, cap, self._config.min_per_store) if cap is not None else fused
 
     def _bridge_query(self, query: str, fused: list[FusedHit]) -> str:
         """Build the round-2 query from what round 1 came back with.
@@ -409,9 +510,15 @@ class Federation:
         theirs: a core far down the page is less likely to be what was asked
         about. `skip_riding` leaves out an episode that already rides on its
         core's row as matched_via: on a page that paid for room, the reader
-        has it once already. Edges never enter the floor or the fuse."""
+        has it once already. Nor does an episode ride that repeats, word for
+        word, a row or an edge already in the packet: a core that was restated
+        keeps its first wording as an episode, and in match order that copy is
+        the nearest thing to the question there is (25 Nov 2026, on a memory
+        that grew: 139 and 233 tokens of one page spent on rows it already
+        held). Edges never enter the floor or the fuse."""
         top = max(0, getattr(self._config, "satellite_top", 0))
         seen = {f.hit.id for f in rows}
+        said = {_same_words(f.hit.content) for f in rows}
         if skip_riding:
             for f in rows:
                 via = (f.hit.metadata or {}).get("matched_via")
@@ -437,8 +544,10 @@ class Federation:
                     break
                 kind, r = q.pop(0)
                 rid = str(r.get("id") or "")
-                if rid and rid not in seen:
+                words = _same_words(r.get("content"))
+                if rid and rid not in seen and (not words or words not in said):
                     seen.add(rid)
+                    said.add(words)
                     edge = Hit(
                         store=core.store,
                         id=rid,

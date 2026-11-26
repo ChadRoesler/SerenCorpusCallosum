@@ -30,7 +30,8 @@ def _rebuild_federation(state, cfg: FederationConfig) -> Federation:
     """Build a fresh Federation from the updated config, reusing the transport
     AND the health tracker - a rebuild used to hand the fan a fresh tracker,
     so every /configure reset /health/stores to nothing."""
-    return Federation(cfg, state.transport, health_tracker=getattr(state, "health", None))
+    return Federation(cfg, state.transport, health_tracker=getattr(state, "health", None),
+                      fit=getattr(getattr(state, "federation", None), "fit", None))
 
 
 @router.post("/configure")
@@ -118,6 +119,9 @@ async def configure(request: Request, params: ConfigureRequest = Body(...)) -> d
                 match.weight = float(w)
             if f is not None:
                 match.floor = float(f)
+            if override.get("habit_floor") is not None:
+                # an adapter option, not a field: 0 turns it off again
+                match.options = {**(match.options or {}), "habit_floor": max(0.0, float(override["habit_floor"]))}
 
     # Rebuild the live federation so the new values take effect immediately.
     request.app.state.federation = _rebuild_federation(request.app.state, cfg)
@@ -167,7 +171,9 @@ async def configure(request: Request, params: ConfigureRequest = Body(...)) -> d
         changed["hop_budget"] = cfg.hop_budget
     if params.stores:
         changed["stores"] = [
-            {"name": s.name, "weight": s.weight, "floor": s.floor}
+            {"name": s.name, "weight": s.weight, "floor": s.floor,
+             **({"habit_floor": (s.options or {}).get("habit_floor", 0.0)}
+                if any(o.get("name") == s.name and o.get("habit_floor") is not None for o in params.stores) else {})}
             for s in cfg.stores
             if any(o.get("name") == s.name for o in params.stores)
         ]

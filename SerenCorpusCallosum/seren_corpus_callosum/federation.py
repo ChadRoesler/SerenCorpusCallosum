@@ -564,6 +564,10 @@ class Federation:
                             "created_at": r.get("created_at"),
                             "source": kind,
                             "edge_of": core.id,
+                            # the other cores this episode hangs on, when Memory says so:
+                            # a pointer for a second look, where content would not be cheap
+                            **({"also_core_ids": [str(c) for c in r["also_core_ids"]]}
+                               if isinstance(r.get("also_core_ids"), list) and r["also_core_ids"] else {}),
                         },
                     )
                     cost = row_cost(edge)
@@ -577,14 +581,23 @@ class Federation:
 
     @staticmethod
     def _lift_citations(fused: list[FusedHit]) -> dict[str, list[dict]]:
-        """Take every hit's inline `rests_on` off its metadata (a count stays)
-        and hand them back by the citing fact's id."""
+        """Take every hit's inline `rests_on` off its metadata and hand them
+        back by the citing fact's id. What stays on the row: how many there are
+        (rests_on_n) and, since 25 Nov 2026, where each one lives
+        (rests_on_keys, "project/key"). Chad: "if content is cheap to carry
+        lets carry it, if its not then... we go to ids". The few reasons the
+        packet has room for ride in full as citation edges; every reason is
+        at least NAMED on the fact that rests on it, and a Loci key is a name
+        a reader can make sense of before fetching it."""
         cited: dict[str, list[dict]] = {}
         for f in fused:
             meta = f.hit.metadata or {}
             got = meta.pop("rests_on", None)
             if isinstance(got, list):
                 meta["rests_on_n"] = len(got)
+                keys = [f"{r.get('project') or '*'}/{r['key']}" for r in got if isinstance(r, dict) and r.get("key")]
+                if keys:
+                    meta["rests_on_keys"] = keys
                 q = [r for r in got if isinstance(r, dict) and r.get("id")]
                 if q:
                     cited[f.hit.id] = q

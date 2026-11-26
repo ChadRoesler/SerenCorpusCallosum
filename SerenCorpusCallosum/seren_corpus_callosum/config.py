@@ -59,6 +59,7 @@ _DEFAULT_SATELLITE_TOP = 0       # only the top N cores of the packet bring sate
 _DEFAULT_SATELLITES_PER_CORE = 3  # how many satellites Memory is asked to hand over per core
 _DEFAULT_SATELLITE_ORDER = "recent"  # which satellites: "recent" (newest) or "match" (the ones the question matched)
 _VALID_SATELLITE_ORDERS = ("recent", "match")
+_DEFAULT_NAME_BUDGET = 0         # episodes a fact may bring by its NAME (project, key) from the stores that keep topics. 0 = none
 _MAX_SATELLITE_SHARE = 0.5       # rows keep at least half a page: past that it is more footnote than answer
 _DEFAULT_CITATION_EDGES = True   # a fact hit brings the facts it rests on (Loci citations). On like the satellites, Chad's call 24 Nov 2026 once it was measured
 _DEFAULT_CITATION_BUDGET = 3     # max cited facts appended (round-robin across the packet's facts)
@@ -210,6 +211,16 @@ class FederationConfig:
     satellite_top: int = _DEFAULT_SATELLITE_TOP
     satellites_per_core: int = _DEFAULT_SATELLITES_PER_CORE
     satellite_order: str = _DEFAULT_SATELLITE_ORDER
+    # NAME edges (25 Nov 2026). The topic edges start from the packet's
+    # MEMORIES: their tags are asked of the stores that keep topics. A fact
+    # has no tag, but it has a name: its project and its key (Chad: "MEMORY
+    # HAS TOPIC A PARALLEL TO LOCIS KEYS"). With name_budget > 0 the names of
+    # the packet's first facts are asked the same way, and up to this many
+    # episodes tagged with them are appended, marked source='name-edge' with
+    # edge_of naming the fact. Off by default: seen working on one real
+    # memory, not yet measured on a benchmark, and it only finds anything
+    # where topics name things.
+    name_budget: int = _DEFAULT_NAME_BUDGET
     # FACT -> FACT edges (24 Nov 2026), the satellites' twin on the rigid side.
     # A Loci fact can rest on others (a citation: "this holds because that
     # does"). With this on, the fan asks Loci for each hit's citations inline
@@ -311,6 +322,7 @@ class FederationConfig:
             satellite_top=max(0, int(d.get("satellite_top", _DEFAULT_SATELLITE_TOP))),
             satellites_per_core=max(0, int(d.get("satellites_per_core", _DEFAULT_SATELLITES_PER_CORE))),
             satellite_order=order,
+            name_budget=max(0, int(d.get("name_budget", _DEFAULT_NAME_BUDGET) or 0)),
             citation_edges_enabled=bool(d.get("citation_edges_enabled", _DEFAULT_CITATION_EDGES)),
             citation_budget=max(0, int(d.get("citation_budget", _DEFAULT_CITATION_BUDGET))),
             citation_top=max(0, int(d.get("citation_top", _DEFAULT_CITATION_TOP))),

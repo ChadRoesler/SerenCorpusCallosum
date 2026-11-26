@@ -29,7 +29,7 @@ from ..config import (
     _DEFAULT_BUDGET_TOKENS, _DEFAULT_CITATION_BUDGET, _DEFAULT_CITATION_EDGES, _DEFAULT_CITATION_TOP,
     _DEFAULT_EDGE_BUDGET, _DEFAULT_EDGES_ENABLED, _DEFAULT_FETCH_MULTIPLIER,
     _DEFAULT_FLOOR, _DEFAULT_FUSION_MODE, _DEFAULT_HOP_BUDGET, _DEFAULT_HOP_TERMS, _DEFAULT_HOPS, _DEFAULT_K,
-    _DEFAULT_MIN_PER_STORE, _DEFAULT_N_RESULTS, _DEFAULT_SATELLITE_BUDGET, _DEFAULT_SATELLITE_EDGES,
+    _DEFAULT_MIN_PER_STORE, _DEFAULT_N_RESULTS, _DEFAULT_NAME_BUDGET, _DEFAULT_SATELLITE_BUDGET, _DEFAULT_SATELLITE_EDGES,
     _DEFAULT_SATELLITE_ORDER, _DEFAULT_SATELLITE_SHARE, _DEFAULT_SATELLITE_TOP, _DEFAULT_SATELLITES_PER_CORE,
     _DEFAULT_TIMEOUT_S, _DEFAULT_WEIGHT, FederationConfig, StoreConfig,
 )
@@ -86,6 +86,10 @@ FEDERATION_KNOBS: list[tuple[str, Any, str]] = [
     ("satellite_order", _DEFAULT_SATELLITE_ORDER,
      "Which of a core's episodes come first. recent: the newest. match: the ones that matched the question, "
      "nearest first, then the newest. A Memory from before 24 Nov 2026 sends the newest whatever is asked."),
+    ("name_budget", _DEFAULT_NAME_BUDGET,
+     "How many episodes a fact may bring by its NAME: its project and key are asked of the stores that keep topics, "
+     "the way a memory's tags already are, and what is tagged with them is appended, marked name-edge and saying "
+     "which fact brought it. 0 brings none. Exact tags only, so it finds something only where topics name things."),
     ("citation_edges_enabled", _DEFAULT_CITATION_EDGES,
      "A fact in the packet brings the facts it rests on (its Loci citations, the skyways), as they read now, "
      "marked citation-edge, after the satellites: the reason a fact holds, handed over with it."),

@@ -200,7 +200,8 @@ class SerenMemoryAdapter(_BaseAdapter):
         return hits
 
     async def search_by_topic(self, topics: list[str], n: int,
-                              exclude_ids: Optional[list[str]] = None) -> list[Hit]:
+                              exclude_ids: Optional[list[str]] = None,
+                              query: Optional[str] = None) -> list[Hit]:
         """The ASSOCIATION edge: POST /by_topic (verified against SerenMemory's
         routes/search.py) - entries sharing a topic tag with the packet, by EXACT
         tag match, NOT vector similarity:
@@ -230,6 +231,11 @@ class SerenMemoryAdapter(_BaseAdapter):
             "include_superseded": bool(opts.get("include_superseded", False)),
             "exclude_ids": list(exclude_ids or []),
         }
+        if query:
+            # The question, so Memory can order the tagged entries by how near each sits
+            # to it (its three tiers share one embedder). A Memory from before 26 Nov
+            # 2026 ignores the field and sends its old order: most tags, then newest.
+            payload["query"] = query
         resp = await self._transport.post_json(url, payload, headers=self._auth_headers)
         hits: list[Hit] = []
         for raw in (resp.get("hits") or []):
@@ -244,7 +250,7 @@ class SerenMemoryAdapter(_BaseAdapter):
                 id=str(raw.get("id", "")),
                 content=raw.get("content", ""),
                 base_relevance=0.0,          # no cosine for a tag match; see overlap
-                raw_distance=None,
+                raw_distance=_as_float_or_none(raw.get("raw_distance")),   # set when the question went along: display, and a tie-break
                 native_score=_as_float_or_none(raw.get("overlap")),
                 metadata=meta,
             ))
@@ -319,6 +325,47 @@ class SerenLociAdapter(_BaseAdapter):
                     **({"rests_on": [dict(r) for r in raw["rests_on"] if isinstance(r, dict)]}
                        if isinstance(raw.get("rests_on"), list) else {}),
                 },
+            ))
+        return hits
+
+    async def search_by_topic(self, topics: list[str], n: int,
+                              exclude_ids: Optional[list[str]] = None,
+                              query: Optional[str] = None) -> list[Hit]:
+        """The ASSOCIATION edge from the fact side: POST /by_name (Loci's
+        routes/search.py, 26 Nov 2026) - the live facts filed under any of the
+        packet's topics, by exact NAME (a project, a key, or words of either),
+        never by meaning. The twin of SerenMemory's /by_topic, under the same
+        method name, so the federation's topic edges reach both kinds of store
+        with one capability check: an episode tagged with a thing brings the
+        facts about that thing.
+
+            POST /by_name {names, n_results, exclude_ids, query?}
+            -> {names, hits: [SearchHit + matched_names], finder}
+
+        Mapped into Hits MARKED source='topic-edge', base_relevance 0.0 (a
+        name match has no cosine), matched_topics the names that matched and
+        overlap how many. A Loci from before the route answers 404; the
+        federation's safe wrapper turns that into no edges."""
+        opts = self._cfg.options
+        url = f"{self._cfg.url}{opts.get('name_search_path', '/by_name')}"
+        payload: dict[str, Any] = {"names": list(topics), "n_results": self._clamp(n),
+                                   "exclude_ids": list(exclude_ids or [])}
+        if query:
+            payload["query"] = query
+        resp = await self._transport.post_json(url, payload, headers=self._auth_headers)
+        hits: list[Hit] = []
+        for raw in (resp.get("hits") or []):
+            matched = [str(m) for m in raw.get("matched_names") or []]
+            hits.append(Hit(
+                store=self.name,
+                id=str(raw.get("id", "")),
+                content=_loci_content(raw),
+                base_relevance=0.0,
+                raw_distance=_as_float_or_none(raw.get("raw_distance")),
+                native_score=float(len(matched)),
+                metadata={"project": raw.get("project"), "key": raw.get("key"), "why": raw.get("why"),
+                          "match_kind": raw.get("match_kind"), "matched_topics": matched, "overlap": len(matched),
+                          "source": "topic-edge"},
             ))
         return hits
 

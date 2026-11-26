@@ -31,7 +31,8 @@ def _rebuild_federation(state, cfg: FederationConfig) -> Federation:
     AND the health tracker - a rebuild used to hand the fan a fresh tracker,
     so every /configure reset /health/stores to nothing."""
     return Federation(cfg, state.transport, health_tracker=getattr(state, "health", None),
-                      fit=getattr(getattr(state, "federation", None), "fit", None))
+                      fit=getattr(getattr(state, "federation", None), "fit", None),
+                      names=getattr(getattr(state, "federation", None), "names", None))
 
 
 @router.post("/configure")
@@ -77,6 +78,8 @@ async def configure(request: Request, params: ConfigureRequest = Body(...)) -> d
             raise HTTPException(
                 422, f"unknown satellite_order {params.satellite_order!r}; valid: {list(_VALID_SATELLITE_ORDERS)}")
         cfg.satellite_order = params.satellite_order
+    if params.name_budget is not None:
+        cfg.name_budget = max(0, params.name_budget)
     if params.citation_edges_enabled is not None:
         cfg.citation_edges_enabled = params.citation_edges_enabled
     if params.citation_budget is not None:
@@ -146,7 +149,7 @@ async def configure(request: Request, params: ConfigureRequest = Body(...)) -> d
         changed["satellite_edges_enabled"] = cfg.satellite_edges_enabled
     if params.satellite_budget is not None:
         changed["satellite_budget"] = cfg.satellite_budget
-    for knob in ("satellite_share", "satellite_top", "satellites_per_core", "satellite_order"):
+    for knob in ("satellite_share", "satellite_top", "satellites_per_core", "satellite_order", "name_budget"):
         if getattr(params, knob) is not None:
             changed[knob] = getattr(cfg, knob)
     if params.citation_edges_enabled is not None:

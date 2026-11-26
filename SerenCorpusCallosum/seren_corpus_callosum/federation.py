@@ -38,12 +38,16 @@ from .fusion import (FusedHit, Hit, _trim_with_quota, apply_floor, fit_in_budget
                      row_cost, rrf_fuse)
 from .fit import FitTracker, best_distance
 from .health import HealthTracker
+from .names import NameTally, name_tokens, row_names, shared_names
 
 # A search packed to a token budget needs enough candidates to fill the page,
 # whatever n_results says: a Loci one-liner is twenty-odd tokens, so this is
 # what one candidate is assumed to cost when the budget sizes the per-store
 # ask (each adapter still clamps the ask to its store's own cap).
 _TOKENS_PER_CANDIDATE = 16
+_LEAD_ROWS = 5      # a store's first rows speak for it when names are compared across stores (names.py)
+_NAME_FACTS = 3     # the packet's first facts are the ones whose names are asked of the stores that keep topics
+_NAME_STRONG = 1.0  # spreads inside its store's usual at which a fact may ask by name with nothing shared (fit.py)
 
 
 @dataclass
@@ -117,10 +121,14 @@ class Federation:
     """
 
     def __init__(self, config: FederationConfig, transport: Transport,
-                 health_tracker: HealthTracker | None = None, fit: FitTracker | None = None):
+                 health_tracker: HealthTracker | None = None, fit: FitTracker | None = None,
+                 names: NameTally | None = None):
         self._config = config
         self._transport = transport
         self._health = health_tracker or HealthTracker()
+        # Which names are on nearly everything in this house (names.py), learned
+        # from every packet and handed on across a /configure rebuild like the habit.
+        self._names = names or NameTally()
         # Each store's habit (fit.py): what its best hit usually looks like,
         # learned from every question so a store that sets rows aside
         # (options.habit_floor) does not start cold. Handed on across a
@@ -159,6 +167,11 @@ class Federation:
     def fit(self) -> FitTracker:
         """Each store's habit: what its best hit usually looks like."""
         return self._fit
+
+    @property
+    def names(self) -> NameTally:
+        """Which names are on nearly everything here, and so say nothing."""
+        return self._names
 
     @property
     def skipped(self) -> list[tuple[str, str]]:
@@ -202,6 +215,11 @@ class Federation:
         if hops > 1 and fused:
             fused = await self._append_hop_hits(fused, query, n_results, hops, budget)
 
+        # Every row says which names it shares with the other stores' lead rows
+        # (names.py): the one thing two stores have in common whatever their
+        # embedders. It changes no order; it is there to be read.
+        self._mark_shares(fused)
+
         # What rides WITH the rows, chosen FIRST, because on a page it needs
         # room made for it: a page is packed full, so an edge told to fit in
         # what is left never rides.
@@ -228,10 +246,139 @@ class Federation:
         # against the packet, and only from stores that speak /by_topic.
         if self._config.edges_enabled and self._config.edge_budget > 0:
             fused = await self._append_topic_edges(fused, query, budget)
+        # And the same join from the other side: a FACT's names (its project and
+        # key) asked of the stores that keep topics, so the episodes tagged with
+        # the thing a fact is about come with it. Off unless name_budget > 0.
+        if getattr(self._config, "name_budget", 0) > 0:
+            fused = await self._append_name_edges(fused, budget, query)
         answered = [n for n, err in outcome.items() if err is None]
         failed = [(n, err) for n, err in outcome.items() if err is not None]
         return FanReport(hits=fused, answered=answered, failed=failed, skipped=self.skipped,
                          budget_tokens=budget, tokens=packet_cost(fused))
+
+    def _mark_shares(self, fused: list[FusedHit]) -> None:
+        """Put `shares` on every row that has a name in common with the lead
+        rows of ANOTHER store: a memory's topic tags against a fact's project
+        and key (names.py; Chad, 25 Nov 2026: "MEMORY HAS TOPIC A PARALLEL TO
+        LOCIS KEYS"). A row that shares a name is on the subject the stores
+        agree about. One that shares none says the stores disagree and no more
+        than that. Names on nearly everything in this house are left out; the
+        tally learns from the packet AFTER it is read."""
+        mine = [(f, {n for n in row_names(f.hit) if not self._names.common(n)}) for f in fused]
+        lead: dict[str, set[str]] = {}
+        seated: dict[str, int] = {}
+        for f, names in mine:
+            s = f.hit.store
+            if seated.get(s, 0) < _LEAD_ROWS:
+                seated[s] = seated.get(s, 0) + 1
+                lead.setdefault(s, set()).update(names)
+        if len(lead) > 1:
+            for f, names in mine:
+                others = set().union(*(v for s, v in lead.items() if s != f.hit.store))
+                both = shared_names(names, others)
+                if both:
+                    f.hit.metadata = {**(f.hit.metadata or {}), "shares": both}
+        self._names.note(row_names(f.hit) for f in fused)
+
+    async def _append_name_edges(self, fused: list[FusedHit], budget: Optional[int] = None,
+                                 query: Optional[str] = None) -> list[FusedHit]:
+        """Append the episodes tagged with a fact's NAME, marked 'name-edge'.
+
+        The topic edges above start from the packet's memories: their tags are
+        asked of the stores that keep topics. A fact carries no tag, so a fact
+        never brought the episodes about the thing it names; when the question
+        found the fact and not the story, the story stayed home. This asks the
+        same /by_topic with a fact's names.
+
+        WHICH FACTS, AND WHICH OF THEIR NAMES. The first cut asked every word
+        of the first three facts' keys, and on a real memory the generic words
+        won: 'build' out of borrow-dont-build-on brought two episodes about
+        nothing of the kind, and a fact that had no business in the packet
+        brought its own strangers. So a fact must be ON THE SUBJECT to bring
+        anything, and there are two ways to be:
+          by agreement  it shares a name with the other stores' lead rows
+                        (`shares`). It asks its project, its key whole, and
+                        the words it shares: the stores have already said
+                        those are the ones this question is about.
+          by strength   its distance sits at least _NAME_STRONG spreads inside
+                        its store's own usual (fit.py). It asks its project,
+                        its key whole, and every word of the key that is not
+                        on everything here. This is the fact that answers the
+                        question while the other store has nothing: the case
+                        where the story most needs fetching.
+        A project made only of names that are on everything is not asked.
+
+        One ask per fact, the facts taking turns, so one cannot crowd out the
+        rest. An edge says which fact brought it (edge_of) and which names
+        matched (matched_topics). Up to name_budget of them, never one already
+        in the packet, and on a page only what still fits. Exact tags only:
+        /by_topic does not forgive a spelling, so 'license' does not find
+        'licence'.
+
+        ONE OF EACH (26 Nov 2026). The question goes along, so the store
+        orders what is tagged by how near it sits to the question and not
+        by its date alone; and a fact's turn goes first to a TIER the edges
+        do not hold yet. With two edges that is the settled core and this
+        week's note: the story and the news. Chad agreed to that, and to how
+        the two are then ordered: the nearer first, and at a tie short, then
+        near, then long."""
+        capable = [b for b in self._stores if hasattr(b.adapter, "search_by_topic")]
+        facts = [f for f in fused if f.rrf_score != 0.0 and (f.hit.metadata or {}).get("key") is not None][:_NAME_FACTS]
+        if not capable or not facts:
+            return fused
+        asks: list[tuple[str, str, list[str]]] = []     # (fact id, its own store, the names it asks)
+        for f in facts:
+            md = f.hit.metadata or {}
+            shares = [str(s) for s in md.get("shares") or []]
+            close = self._fit.closeness(f.hit.store, f.hit.raw_distance)
+            strong = close is not None and close >= _NAME_STRONG
+            if not shares and not strong:
+                continue
+            project, key = str(md.get("project") or "").lower(), str(md.get("key") or "").lower()
+            words = set(shares) | ({t for t in name_tokens(key) if not self._names.common(t)} if strong else set())
+            p_words = name_tokens(project)
+            offers = [project] if p_words and not all(self._names.common(t) for t in p_words) else []
+            offers += [key] + sorted(words - {project, key})
+            asks.append((f.hit.id, f.hit.store, offers))
+        # A fact asks the OTHER stores by its name, never its own: since Loci
+        # grew a lookup by name too (26 Nov 2026) its own store would answer
+        # with the fact's siblings, and this edge is for the story, not for
+        # more facts.
+        calls = [(i, b) for i, (_fid, own, _names) in enumerate(asks) for b in capable if b.adapter.name != own]
+        if not calls:
+            return fused
+        count = self._config.name_budget
+        exclude = [f.hit.id for f in fused]
+        # ask for more than will ride, so that more than one tier is there to choose from
+        results = await asyncio.gather(*(self._safe_topic_search(b, asks[i][2], max(count * 3, 6), exclude, query)
+                                         for i, b in calls))
+        queues: list[list[Hit]] = [[] for _ in asks]
+        for (i, _b), (_store, hits) in zip(calls, results):
+            for h in hits:
+                h.metadata = {**(h.metadata or {}), "source": "name-edge", "edge_of": asks[i][0]}
+                queues[i].append(h)
+        edges: list[Hit] = []
+        seen: set[str] = set()
+        tier_of = lambda h: str((h.metadata or {}).get("tier") or "")   # noqa: E731
+        while len(edges) < count and any(queues):
+            for q in queues:
+                q[:] = [h for h in q if h.id not in seen]
+                if not q:
+                    continue
+                held = {tier_of(e) for e in edges}
+                h = next((x for x in q if tier_of(x) not in held), q[0])   # a tier not held yet, else its best
+                q.remove(h)
+                seen.add(h.id)
+                edges.append(h)
+                if len(edges) >= count:
+                    break
+        order = {"short": 0, "near": 1, "long": 2}
+        edges.sort(key=lambda h: (round(h.raw_distance, 2) if h.raw_distance is not None else 9.0,
+                                  order.get(tier_of(h), 3)))            # stable: no distances, no reordering
+        edge_fused = [FusedHit(hit=h, rrf_score=0.0, store_rank=i + 1) for i, h in enumerate(edges)]
+        if budget is not None:
+            edge_fused, _ = fit_in_budget(edge_fused, self._remaining(fused, budget))
+        return fused + edge_fused
 
     def _budget(self, budget_tokens: Optional[int]) -> Optional[int]:
         """The page size for one call: the caller's, else the config's default,
@@ -732,7 +879,7 @@ class Federation:
         return rows, satellites, reasons
 
     async def _safe_topic_search(self, bound: _BoundStore, topics: list[str],
-                                 n: int, exclude_ids: list[str]
+                                 n: int, exclude_ids: list[str], query: Optional[str] = None
                                  ) -> tuple[str, list[Hit]]:
         """Topic-edge twin of _safe_search: call one store's search_by_topic with
         a timeout; ANY failure -> empty list. Same graceful-degradation contract -
@@ -740,7 +887,8 @@ class Federation:
         name = bound.adapter.name
         try:
             hits = await asyncio.wait_for(
-                bound.adapter.search_by_topic(topics, n, exclude_ids=exclude_ids),
+                (bound.adapter.search_by_topic(topics, n, exclude_ids=exclude_ids, query=query) if query
+                 else bound.adapter.search_by_topic(topics, n, exclude_ids=exclude_ids)),
                 timeout=self._config.per_store_timeout_s,
             )
             return name, list(hits) if hits else []
@@ -759,11 +907,25 @@ class Federation:
         (rrf_score 0.0, marked source='topic-edge' by the adapter). Edges never
         enter the floor or the fuse - they're here by association, not magnitude,
         and they ride AFTER the similarity-ranked hits so the ranking stays
-        honest. A store without search_by_topic (Loci) is skipped by capability
+        honest. A store without search_by_topic is skipped by capability
         check; if nothing's capable or there are no topics, the packet returns
         untouched. On a page (`budget`) an edge also has to fit in what the
-        packet left of it."""
-        topics = _collect_topics(fused)
+        packet left of it.
+
+        Since 26 Nov 2026:
+          the question goes along, so a store orders what is tagged by how
+          near it sits to the question and not by its date alone (a match is
+          usually on one tag; by date, this week's notes beat every settled
+          core). A store from before that ignores it.
+          a fact store answers too (Loci's /by_name): the packet's topics are
+          names, and the facts filed under them are the facts about what the
+          packet's episodes are about.
+          the stores take turns, so the first store's matches cannot take
+          every seat before the second is heard.
+          a topic made only of names that are on everything in this house
+          (names.py) is not asked: it matches everything and says nothing."""
+        topics = [t for t in _collect_topics(fused)
+                  if not (name_tokens(t) and all(self._names.common(w) for w in name_tokens(t)))]
         if not topics:
             return fused
         capable = [b for b in self._stores
@@ -773,12 +935,14 @@ class Federation:
         count = self._config.edge_budget
         exclude = [f.hit.id for f in fused]
         results = await asyncio.gather(
-            *(self._safe_topic_search(b, topics, count, exclude) for b in capable)
+            *(self._safe_topic_search(b, topics, count, exclude, query) for b in capable)
         )
+        queues = [list(hits) for _name, hits in results]
         edges: list[Hit] = []
-        for _name, hits in results:
-            edges.extend(hits)
-        edges = edges[:count]
+        while len(edges) < count and any(queues):
+            for q in queues:
+                if q and len(edges) < count:
+                    edges.append(q.pop(0))
         edge_fused = [FusedHit(hit=h, rrf_score=0.0, store_rank=i + 1)
                       for i, h in enumerate(edges)]
         if budget is not None:

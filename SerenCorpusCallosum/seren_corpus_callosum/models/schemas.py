@@ -81,6 +81,7 @@ class ConfigureRequest(BaseModel):
     satellite_top: Optional[int] = None
     satellites_per_core: Optional[int] = None
     satellite_order: Optional[str] = None
+    name_budget: Optional[int] = None
     citation_edges_enabled: Optional[bool] = None
     citation_budget: Optional[int] = None
     citation_top: Optional[int] = None
